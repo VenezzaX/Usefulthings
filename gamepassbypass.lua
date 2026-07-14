@@ -2,16 +2,38 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-if playerGui:FindFirstChild("PotassiumPassUI") then
-    playerGui.PotassiumPassUI:Destroy()
+-- Helper function to identify the current executor dynamically
+local function getExecutorName()
+    local name = "Executor"
+    local success, result = pcall(function()
+        if typeof(identifyexecutor) == "function" then
+            return identifyexecutor()
+        elseif typeof(getexecutorname) == "function" then
+            return getexecutorname()
+        end
+    end)
+    if success and typeof(result) == "string" and result ~= "" then
+        name = result
+    end
+    return name
+end
+
+local currentExecutor = getExecutorName()
+local passName = currentExecutor .. " Pass"
+local uiName = currentExecutor .. "PassUI"
+
+-- Clean up any previous instances using the dynamic name
+if playerGui:FindFirstChild(uiName) then
+    playerGui[uiName]:Destroy()
 end
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "PotassiumPassUI"
+screenGui.Name = uiName
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -23,6 +45,11 @@ screenGui.Parent = playerGui
 local isMobile = UserInputService.TouchEnabled
 local autoSpeed = 100
 local uiVisible = true
+local autoClipEnabled = false 
+local blacklist = {}          
+local webhookUrl = ""         -- FEATURE: Discord Webhook URL
+local antiPrompt = false       -- FEATURE: Block purchase screen overlays
+
 local reopenButton = nil
 local settingsWindow = nil
 local suppressCounter = 0
@@ -56,9 +83,68 @@ local SIGNAL_COLORS = {
 }
 
 local TITLE_H = 28
+local FILTER_H = 24 
 local FOOTER_H = 30
 local ROW_H = 26
 local BTN_H = 20
+
+-- FEATURE: Save/Load Config persistence
+local function saveConfig()
+    if writefile then
+        local data = {
+            autoSpeed = autoSpeed,
+            autoClipEnabled = autoClipEnabled,
+            blacklist = blacklist,
+            webhookUrl = webhookUrl,
+            antiPrompt = antiPrompt
+        }
+        pcall(writefile, "PassSpammerConfig.json", HttpService:JSONEncode(data))
+    end
+end
+
+local function loadConfig()
+    if readfile and isfile and isfile("PassSpammerConfig.json") then
+        local success, result = pcall(readfile, "PassSpammerConfig.json")
+        if success then
+            local success2, data = pcall(HttpService.JSONDecode, HttpService, result)
+            if success2 and typeof(data) == "table" then
+                autoSpeed = data.autoSpeed or autoSpeed
+                autoClipEnabled = data.autoClipEnabled or false
+                blacklist = data.blacklist or {}
+                webhookUrl = data.webhookUrl or ""
+                antiPrompt = data.antiPrompt or false
+            end
+        end
+    end
+end
+loadConfig() -- Call early to load configs
+
+-- FEATURE: Webhook poster
+local function sendWebhook(label, id)
+    if webhookUrl == "" then return end
+    local req = syn and syn.request or http and http.request or request
+    if req then
+        task.spawn(function()
+            pcall(req, {
+                Url = webhookUrl,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    embeds = {{
+                        title = "🛒 Marketplace Prompt Intercepted",
+                        color = 10181046,
+                        fields = {
+                            {name = "Asset Type", value = label, inline = true},
+                            {name = "Asset ID", value = tostring(id), inline = true},
+                            {name = "Game/Place ID", value = tostring(game.PlaceId), inline = true}
+                        },
+                        footer = {text = "Logged via " .. currentExecutor}
+                    }}
+                })
+            })
+        end)
+    end
+end
 
 local function stroke(parent, color, thickness)
     local s = Instance.new("UIStroke")
@@ -151,8 +237,8 @@ end
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Size = isMobile and UDim2.new(0, 320, 0, 220) or UDim2.new(0, 460, 0, 250)
-panel.Position = UDim2.new(0.5, isMobile and -160 or -230, 0.5, isMobile and -110 or -125)
+panel.Size = isMobile and UDim2.new(0, 320, 0, 244) or UDim2.new(0, 460, 0, 274)
+panel.Position = UDim2.new(0.5, isMobile and -160 or -230, 0.5, isMobile and -122 or -137)
 panel.BackgroundColor3 = C.bg
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
@@ -162,7 +248,7 @@ panel.Parent = screenGui
 bevel(panel)
 
 local panelMin = Instance.new("UISizeConstraint")
-panelMin.MinSize = isMobile and Vector2.new(300, 200) or Vector2.new(430, 220)
+panelMin.MinSize = isMobile and Vector2.new(300, 220) or Vector2.new(430, 240)
 panelMin.MaxSize = Vector2.new(700, 500)
 panelMin.Parent = panel
 
@@ -177,7 +263,7 @@ local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
 title.Size = UDim2.new(1, -68, 1, 0)
 title.Position = UDim2.new(0, 8, 0, 0)
-title.Text = "Potassium Pass"
+title.Text = passName
 title.TextColor3 = C.text
 title.TextSize = 14
 title.Font = Enum.Font.ArialBold
@@ -190,6 +276,30 @@ addDesktopHover(clearBtn, C.panel2, C.top, C.text, C.text)
 
 local closeBtn = makeButton(titleBar, "X", 20, C.red, C.text)
 closeBtn.Position = UDim2.new(1, -22, 0, 4)
+
+local filterBar = Instance.new("Frame")
+filterBar.Size = UDim2.new(1, 0, 0, FILTER_H)
+filterBar.Position = UDim2.new(0, 0, 0, TITLE_H)
+filterBar.BackgroundColor3 = C.panel
+filterBar.BorderSizePixel = 0
+filterBar.Parent = panel
+bevel(filterBar)
+
+local filterBox = Instance.new("TextBox")
+filterBox.Size = UDim2.new(1, -16, 0, 16)
+filterBox.Position = UDim2.new(0, 8, 0, 4)
+filterBox.BackgroundColor3 = C.bg
+filterBox.PlaceholderText = "Filter by ID or Type (e.g. Gamepass, Product)..."
+filterBox.PlaceholderColor3 = C.textDim
+filterBox.Text = ""
+filterBox.TextColor3 = C.text
+filterBox.TextSize = 11
+filterBox.Font = Enum.Font.Arial
+filterBox.TextXAlignment = Enum.TextXAlignment.Left
+filterBox.BorderSizePixel = 0
+filterBox.Parent = filterBar
+bevel(filterBox)
+pad(filterBox, 4, 4, 0, 0)
 
 local dragging = false
 local dragStart, startPos
@@ -216,8 +326,8 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 local listWrap = Instance.new("Frame")
-listWrap.Size = UDim2.new(1, -8, 1, -(TITLE_H + FOOTER_H + 8))
-listWrap.Position = UDim2.new(0, 4, 0, TITLE_H + 4)
+listWrap.Size = UDim2.new(1, -8, 1, -(TITLE_H + FILTER_H + FOOTER_H + 8))
+listWrap.Position = UDim2.new(0, 4, 0, TITLE_H + FILTER_H + 4)
 listWrap.BackgroundColor3 = C.panel
 listWrap.BorderSizePixel = 0
 listWrap.ClipsDescendants = true
@@ -265,7 +375,7 @@ local speedLabel = Instance.new("TextLabel")
 speedLabel.BackgroundTransparency = 1
 speedLabel.Size = UDim2.new(0, 72, 1, 0)
 speedLabel.Position = UDim2.new(0, 118, 0, 0)
-speedLabel.Text = "Speed: 100"
+speedLabel.Text = "Speed: " .. tostring(autoSpeed)
 speedLabel.TextColor3 = C.textMuted
 speedLabel.TextSize = 12
 speedLabel.Font = Enum.Font.Arial
@@ -335,9 +445,33 @@ local function stopAllLoops()
     table.clear(activeSpam)
 end
 
+local function updateFilter()
+    local q = string.lower(filterBox.Text)
+    for _, item in ipairs(entries) do
+        if item and item.Parent then
+            local labelVal = string.lower(item:FindFirstChild("TypeLabel").Text)
+            local idVal = string.lower(item:FindFirstChild("IdLabel").Text)
+            if q == "" or string.find(labelVal, q) or string.find(idVal, q) then
+                item.Visible = true
+            else
+                item.Visible = false
+            end
+        end
+    end
+end
+filterBox:GetPropertyChangedSignal("Text"):Connect(updateFilter)
+
 local function addLog(label, id, signalType)
     if suppressCounter > 0 then return end
+    if table.find(blacklist, tonumber(id)) then return end 
+    
     setEmpty(false)
+
+    if autoClipEnabled then
+        pcall(setclipboard, tostring(id))
+    end
+
+    sendWebhook(label, id) -- Fire Discord Webhook async
 
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, -2, 0, ROW_H)
@@ -355,6 +489,7 @@ local function addLog(label, id, signalType)
     stripe.Parent = row
 
     local typeLabel = Instance.new("TextLabel")
+    typeLabel.Name = "TypeLabel"
     typeLabel.BackgroundTransparency = 1
     typeLabel.Size = UDim2.new(0, 62, 1, 0)
     typeLabel.Position = UDim2.new(0, 8, 0, 0)
@@ -367,6 +502,7 @@ local function addLog(label, id, signalType)
 
     local actionWidth = 106
     local idLabel = Instance.new("TextLabel")
+    idLabel.Name = "IdLabel"
     idLabel.BackgroundTransparency = 1
     idLabel.Size = UDim2.new(1, -(78 + actionWidth), 1, 0)
     idLabel.Position = UDim2.new(0, 72, 0, 0)
@@ -528,6 +664,7 @@ local function addLog(label, id, signalType)
     eventCount += 1
     countLabel.Text = tostring(eventCount) .. " events"
     table.insert(entries, row)
+    updateFilter() 
 end
 
 clearBtn.Activated:Connect(function()
@@ -552,9 +689,10 @@ local function toggleSettings()
         return
     end
 
+    -- Enlarged settings height to handle more control features comfortably (200 -> 240)
     settingsWindow = Instance.new("Frame")
-    settingsWindow.Size = UDim2.new(0, 170, 0, 86)
-    settingsWindow.Position = UDim2.new(0.5, -85, 0.5, -43)
+    settingsWindow.Size = UDim2.new(0, 260, 0, 240)
+    settingsWindow.Position = UDim2.new(0.5, -130, 0.5, -120)
     settingsWindow.BackgroundColor3 = C.bg
     settingsWindow.BorderSizePixel = 0
     settingsWindow.ZIndex = 200
@@ -574,7 +712,7 @@ local function toggleSettings()
     ttl.BackgroundTransparency = 1
     ttl.Size = UDim2.new(1, -24, 1, 0)
     ttl.Position = UDim2.new(0, 6, 0, 0)
-    ttl.Text = "Speed"
+    ttl.Text = "Settings & Hook Setup"
     ttl.TextColor3 = C.text
     ttl.TextSize = 12
     ttl.Font = Enum.Font.ArialBold
@@ -589,9 +727,22 @@ local function toggleSettings()
         if settingsWindow then settingsWindow:Destroy(); settingsWindow = nil end
     end)
 
+    -- Row 1: Spam speed configuration & Clip
+    local speedLbl = Instance.new("TextLabel")
+    speedLbl.BackgroundTransparency = 1
+    speedLbl.Size = UDim2.new(0, 60, 0, 20)
+    speedLbl.Position = UDim2.new(0, 8, 0, 32)
+    speedLbl.Text = "Spam Speed:"
+    speedLbl.TextColor3 = C.text
+    speedLbl.TextSize = 11
+    speedLbl.Font = Enum.Font.Arial
+    speedLbl.TextXAlignment = Enum.TextXAlignment.Left
+    speedLbl.ZIndex = 201
+    speedLbl.Parent = settingsWindow
+
     local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 64, 0, 22)
-    box.Position = UDim2.new(0, 8, 0, 36)
+    box.Size = UDim2.new(0, 50, 0, 20)
+    box.Position = UDim2.new(0, 74, 0, 32)
     box.BackgroundColor3 = C.panel
     box.Text = tostring(autoSpeed)
     box.TextColor3 = C.text
@@ -602,21 +753,17 @@ local function toggleSettings()
     box.Parent = settingsWindow
     bevel(box)
 
-    local save = makeButton(settingsWindow, "Save", 44, C.panel2, C.text)
-    save.Position = UDim2.new(0, 80, 0, 36)
+    local save = makeButton(settingsWindow, "Save", 38, C.panel2, C.text)
+    save.Position = UDim2.new(0, 128, 0, 32)
     save.ZIndex = 201
 
-    local hint = Instance.new("TextLabel")
-    hint.BackgroundTransparency = 1
-    hint.Size = UDim2.new(1, -8, 0, 16)
-    hint.Position = UDim2.new(0, 8, 1, -18)
-    hint.Text = "1 to 10000"
-    hint.TextColor3 = C.textDim
-    hint.TextSize = 11
-    hint.Font = Enum.Font.Arial
-    hint.TextXAlignment = Enum.TextXAlignment.Left
-    hint.ZIndex = 201
-    hint.Parent = settingsWindow
+    local autoClipBtn = makeButton(settingsWindow, autoClipEnabled and "Clip: ON" or "Clip: OFF", 42, autoClipEnabled and C.green or C.panel2, C.text)
+    autoClipBtn.Position = UDim2.new(0, 170, 0, 32)
+    autoClipBtn.ZIndex = 201
+
+    local antiBtn = makeButton(settingsWindow, antiPrompt and "Block: ON" or "Block: OFF", 40, antiPrompt and C.red or C.panel2, C.text)
+    antiBtn.Position = UDim2.new(0, 216, 0, 32)
+    antiBtn.ZIndex = 201
 
     save.Activated:Connect(function()
         local n = tonumber(box.Text)
@@ -626,19 +773,183 @@ local function toggleSettings()
                 autoSpeed = n
                 speedLabel.Text = "Speed: " .. tostring(autoSpeed)
                 box.BackgroundColor3 = C.green
+                saveConfig()
                 task.wait(0.3)
-                if box and box.Parent then
-                    box.BackgroundColor3 = C.panel
-                end
+                if box and box.Parent then box.BackgroundColor3 = C.panel end
             else
                 box.BackgroundColor3 = C.red
                 task.wait(0.3)
-                if box and box.Parent then
-                    box.BackgroundColor3 = C.panel
-                end
+                if box and box.Parent then box.BackgroundColor3 = C.panel end
             end
         end
     end)
+
+    autoClipBtn.Activated:Connect(function()
+        autoClipEnabled = not autoClipEnabled
+        autoClipBtn.Text = autoClipEnabled and "Clip: ON" or "Clip: OFF"
+        setButtonState(autoClipBtn, autoClipEnabled and C.green or C.panel2, C.text)
+        saveConfig()
+    end)
+
+    antiBtn.Activated:Connect(function()
+        antiPrompt = not antiPrompt
+        antiBtn.Text = antiPrompt and "Block: ON" or "Block: OFF"
+        setButtonState(antiBtn, antiPrompt and C.red or C.panel2, C.text)
+        saveConfig()
+    end)
+
+    -- Row 2: Discord Webhook configuration
+    local webLbl = Instance.new("TextLabel")
+    webLbl.BackgroundTransparency = 1
+    webLbl.Size = UDim2.new(0, 80, 0, 20)
+    webLbl.Position = UDim2.new(0, 8, 0, 56)
+    webLbl.Text = "Webhook URL:"
+    webLbl.TextColor3 = C.text
+    webLbl.TextSize = 11
+    webLbl.Font = Enum.Font.Arial
+    webLbl.TextXAlignment = Enum.TextXAlignment.Left
+    webLbl.ZIndex = 201
+    webLbl.Parent = settingsWindow
+
+    local webBox = Instance.new("TextBox")
+    webBox.Size = UDim2.new(1, -114, 0, 20)
+    webBox.Position = UDim2.new(0, 84, 0, 56)
+    webBox.BackgroundColor3 = C.panel
+    webBox.PlaceholderText = "Paste Discord webhook link..."
+    webBox.PlaceholderColor3 = C.textDim
+    webBox.Text = webhookUrl
+    webBox.TextColor3 = C.text
+    webBox.TextSize = 10
+    webBox.Font = Enum.Font.Arial
+    webBox.BorderSizePixel = 0
+    webBox.ZIndex = 201
+    webBox.Parent = settingsWindow
+    bevel(webBox)
+    pad(webBox, 4, 4, 0, 0)
+
+    local saveWebBtn = makeButton(settingsWindow, "Apply", 38, C.panel2, C.text)
+    saveWebBtn.Position = UDim2.new(1, -44, 0, 56)
+    saveWebBtn.ZIndex = 201
+
+    saveWebBtn.Activated:Connect(function()
+        webhookUrl = webBox.Text
+        saveConfig()
+        saveWebBtn.Text = "OK"
+        setButtonState(saveWebBtn, C.green, C.text)
+        task.wait(0.5)
+        if saveWebBtn and saveWebBtn.Parent then
+            saveWebBtn.Text = "Apply"
+            setButtonState(saveWebBtn, C.panel2, C.text)
+        end
+    end)
+
+    -- Row 3: Manual creation / Blacklist control
+    local manualTitle = Instance.new("TextLabel")
+    manualTitle.BackgroundTransparency = 1
+    manualTitle.Size = UDim2.new(1, -16, 0, 16)
+    manualTitle.Position = UDim2.new(0, 8, 0, 84)
+    manualTitle.Text = "Manual Entry Creator & Blacklist"
+    manualTitle.TextColor3 = C.textMuted
+    manualTitle.TextSize = 11
+    manualTitle.Font = Enum.Font.ArialBold
+    manualTitle.TextXAlignment = Enum.TextXAlignment.Left
+    manualTitle.ZIndex = 201
+    manualTitle.Parent = settingsWindow
+
+    local targetIdBox = Instance.new("TextBox")
+    targetIdBox.Size = UDim2.new(0, 140, 0, 20)
+    targetIdBox.Position = UDim2.new(0, 8, 0, 104)
+    targetIdBox.BackgroundColor3 = C.panel
+    targetIdBox.PlaceholderText = "ID (e.g. 1234567)"
+    targetIdBox.PlaceholderColor3 = C.textDim
+    targetIdBox.Text = ""
+    targetIdBox.TextColor3 = C.text
+    targetIdBox.TextSize = 11
+    targetIdBox.Font = Enum.Font.Arial
+    targetIdBox.BorderSizePixel = 0
+    targetIdBox.ZIndex = 201
+    targetIdBox.Parent = settingsWindow
+    bevel(targetIdBox)
+    pad(targetIdBox, 4, 4, 0, 0)
+
+    local typeToggle = "Product"
+    local typeToggleBtn = makeButton(settingsWindow, "Type: Product", 100, C.panel2, C.text)
+    typeToggleBtn.Position = UDim2.new(0, 152, 0, 104)
+    typeToggleBtn.ZIndex = 201
+    
+    typeToggleBtn.Activated:Connect(function()
+        if typeToggle == "Product" then
+            typeToggle = "Gamepass"
+        elseif typeToggle == "Gamepass" then
+            typeToggle = "Bulk"
+        elseif typeToggle == "Bulk" then
+            typeToggle = "Purchase"
+        else
+            typeToggle = "Product"
+        end
+        typeToggleBtn.Text = "Type: " .. typeToggle
+    end)
+
+    local createBtn = makeButton(settingsWindow, "Add to Log Area", 112, C.green, C.text)
+    createBtn.Position = UDim2.new(0, 8, 0, 130)
+    createBtn.ZIndex = 201
+
+    local blacklistBtn = makeButton(settingsWindow, "Block / Unblock ID", 128, C.red, C.text)
+    blacklistBtn.Position = UDim2.new(0, 124, 0, 130)
+    blacklistBtn.ZIndex = 201
+
+    createBtn.Activated:Connect(function()
+        local idVal = tonumber(targetIdBox.Text)
+        if idVal then
+            addLog(typeToggle, idVal, typeToggle)
+            createBtn.Text = "Added!"
+            task.wait(0.5)
+            if createBtn and createBtn.Parent then createBtn.Text = "Add to Log Area" end
+        else
+            targetIdBox.BackgroundColor3 = C.red
+            task.wait(0.3)
+            if targetIdBox and targetIdBox.Parent then targetIdBox.BackgroundColor3 = C.panel end
+        end
+    end)
+
+    blacklistBtn.Activated:Connect(function()
+        local idVal = tonumber(targetIdBox.Text)
+        if idVal then
+            local index = table.find(blacklist, idVal)
+            if index then
+                table.remove(blacklist, index)
+                blacklistBtn.Text = "Unblocked!"
+            else
+                table.insert(blacklist, idVal)
+                blacklistBtn.Text = "Blocked!"
+                for _, item in ipairs(entries) do
+                    if item and item.Parent and tonumber(item:FindFirstChild("IdLabel").Text) == idVal then
+                        item:Destroy()
+                    end
+                end
+            end
+            saveConfig()
+            task.wait(0.5)
+            if blacklistBtn and blacklistBtn.Parent then blacklistBtn.Text = "Block / Unblock ID" end
+        else
+            targetIdBox.BackgroundColor3 = C.red
+            task.wait(0.3)
+            if targetIdBox and targetIdBox.Parent then targetIdBox.BackgroundColor3 = C.panel end
+        end
+    end)
+
+    -- Read-only information hints at bottom of settings window
+    local infoLbl = Instance.new("TextLabel")
+    infoLbl.BackgroundTransparency = 1
+    infoLbl.Size = UDim2.new(1, -16, 0, 60)
+    infoLbl.Position = UDim2.new(0, 8, 0, 164)
+    infoLbl.Text = "- Save configurations automatically.\n- Block: ON intercepts outbound prompts so the native UI doesn't display.\n- Discord webhook tracks intercepted events remotely."
+    infoLbl.TextColor3 = C.textDim
+    infoLbl.TextSize = 10
+    infoLbl.Font = Enum.Font.Arial
+    infoLbl.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl.ZIndex = 201
+    infoLbl.Parent = settingsWindow
 end
 
 setBtn.Activated:Connect(toggleSettings)
@@ -702,6 +1013,32 @@ if not isMobile then
     end)
 end
 
+-- FEATURE: Metamethod Hooking for Outgoing Prompts (Anti-Prompt / Silent Capture)
+-- This blocks actual prompt screens while silently extracting the asset ID to the log area.
+local hookSuccess, hookErr = pcall(function()
+    if hookmetamethod then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+            if self == MarketplaceService then
+                if method == "PromptPurchase" and typeof(args[2]) == "number" then
+                    task.spawn(addLog, "Purchase", args[2], "Purchase")
+                    if antiPrompt then return end -- Silently capture and block output UI
+                elseif method == "PromptGamePassPurchase" and typeof(args[2]) == "number" then
+                    task.spawn(addLog, "Gamepass", args[2], "Gamepass")
+                    if antiPrompt then return end
+                elseif method == "PromptProductPurchase" and typeof(args[2]) == "number" then
+                    task.spawn(addLog, "Product", args[2], "Product")
+                    if antiPrompt then return end
+                end
+            end
+            return oldNamecall(self, ...)
+        end)
+    end
+end)
+
+-- Native fallback listeners if hooking isn't supported or active
 MarketplaceService.PromptProductPurchaseFinished:Connect(function(_, id)
     if suppressCounter == 0 then addLog("Product", id, "Product") end
 end)
