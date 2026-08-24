@@ -2,7 +2,13 @@ if game.PlaceId == 3095204897 then
 	return
 end
 
-local env = getgenv()
+local env = getgenv and getgenv() or _G
+
+if env._EmoteHubCleanup then
+	pcall(env._EmoteHubCleanup)
+	env._EmoteHubCleanup = nil
+end
+
 if env.LastExecuted and tick() - env.LastExecuted < 5 then return end
 env.LastExecuted = tick()
 
@@ -11,28 +17,70 @@ local Players = game:GetService("Players")
 local AvatarEditorService = game:GetService("AvatarEditorService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
-if CoreGui:FindFirstChild("BevelEmoteHub") then
-	CoreGui.BevelEmoteHub:Destroy()
+local function getGuiParent()
+	local success, core = pcall(function()
+		return (gethui and gethui()) or (get_hidden_gui and get_hidden_gui()) or game:GetService("CoreGui")
+	end)
+	if success and core then
+		return core
+	end
+	return LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- Potassium Color Palette
-local C = {
-    bg = Color3.fromRGB(36, 39, 47),
-    panel = Color3.fromRGB(58, 62, 74),
-    panel2 = Color3.fromRGB(70, 75, 89),
-    top = Color3.fromRGB(82, 88, 104),
-    borderDark = Color3.fromRGB(24, 26, 31),
-    borderLight = Color3.fromRGB(112, 119, 138),
-    text = Color3.fromRGB(241, 243, 247),
-    textMuted = Color3.fromRGB(210, 214, 223),
-    textDim = Color3.fromRGB(165, 171, 184), -- Missing color added here
-    green = Color3.fromRGB(103, 208, 120),
-    red = Color3.fromRGB(221, 103, 103),
-    blue = Color3.fromRGB(97, 150, 228),
-    yellow = Color3.fromRGB(222, 186, 90),
+local targetGuiParent = getGuiParent()
+
+local function cleanAllPreviousInstances(names)
+	local containers = {}
+	pcall(function() if gethui then table.insert(containers, gethui()) end end)
+	pcall(function() if get_hidden_gui then table.insert(containers, get_hidden_gui()) end end)
+	pcall(function() table.insert(containers, game:GetService("CoreGui")) end)
+	pcall(function() if LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") then table.insert(containers, LocalPlayer.PlayerGui) end end)
+
+	for _, container in ipairs(containers) do
+		pcall(function()
+			for _, name in ipairs(names) do
+				local found = container:FindFirstChild(name)
+				while found do
+					found:Destroy()
+					found = container:FindFirstChild(name)
+				end
+			end
+		end)
+	end
+end
+
+cleanAllPreviousInstances({
+	"StudioEmoteHub",
+	"BevelEmoteHub",
+	"PotassiumEmoteHub"
+})
+
+local StudioTheme = {
+	windowBg       = Color3.fromRGB(37, 37, 38),
+	headerBg       = Color3.fromRGB(45, 45, 48),
+	panelBg        = Color3.fromRGB(42, 42, 45),
+	panelAlt       = Color3.fromRGB(32, 32, 34),
+	insetBg        = Color3.fromRGB(26, 26, 28),
+	cardBg         = Color3.fromRGB(44, 44, 48),
+	cardHover      = Color3.fromRGB(56, 56, 62),
+	border         = Color3.fromRGB(20, 20, 22),
+	borderSubtle   = Color3.fromRGB(55, 55, 58),
+	text           = Color3.fromRGB(225, 225, 228),
+	textMuted      = Color3.fromRGB(160, 160, 165),
+	textDim        = Color3.fromRGB(115, 115, 120),
+	blue           = Color3.fromRGB(0, 122, 204),
+	blueHover      = Color3.fromRGB(28, 140, 224), 
+	green          = Color3.fromRGB(76, 175, 80),
+	greenHover     = Color3.fromRGB(92, 195, 96),  
+	red            = Color3.fromRGB(215, 60, 60),
+	redHover       = Color3.fromRGB(235, 75, 75),   
+	yellow         = Color3.fromRGB(230, 180, 50),
+	btnBg          = Color3.fromRGB(50, 50, 54),
+	btnHover       = Color3.fromRGB(65, 65, 70),
+	tabActive      = Color3.fromRGB(40, 40, 42),
+	tabInactive    = Color3.fromRGB(30, 30, 32),
 }
 
 local Emotes = {}
@@ -45,6 +93,8 @@ local EmoteCache = {}
 local LoopEmotes = true
 local currentEmoteTrack = nil
 local forceEmote = false
+local activeEmoteName = "None"
+local activeConnections = {}
 
 if isfile and isfile("FavoritedEmotes.txt") then
 	local succ, res = pcall(function()
@@ -57,206 +107,265 @@ end
 
 local function SaveFavorites()
 	if writefile then
-		writefile("FavoritedEmotes.txt", HttpService:JSONEncode(FavoritedEmotes))
+		pcall(writefile, "FavoritedEmotes.txt", HttpService:JSONEncode(FavoritedEmotes))
 	end
 end
 
 local function StopEmote()
 	forceEmote = false
+	activeEmoteName = "None"
 	if currentEmoteTrack then
 		currentEmoteTrack:Stop()
 		currentEmoteTrack = nil
 	end
 end
 
--- UI Utility Functions
-local function bevel(parent)
-    local topLine = Instance.new("Frame")
-    topLine.Size = UDim2.new(1, 0, 0, 1)
-    topLine.BackgroundColor3 = C.borderLight
-    topLine.BorderSizePixel = 0
-    topLine.Parent = parent
+local function makeStudioButton(parent, text, w, h, bg, fg)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0, w, 0, h or 22)
+	b.BackgroundColor3 = bg or StudioTheme.btnBg
+	b.Text = text
+	b.TextColor3 = fg or StudioTheme.text
+	b.TextSize = 12
+	b.Font = Enum.Font.SourceSansSemibold
+	b.AutoButtonColor = false
+	b.BorderSizePixel = 1
+	b.BorderColor3 = StudioTheme.border
+	b.ClipsDescendants = true
+	b.Parent = parent
 
-    local leftLine = Instance.new("Frame")
-    leftLine.Size = UDim2.new(0, 1, 1, 0)
-    leftLine.BackgroundColor3 = C.borderLight
-    leftLine.BorderSizePixel = 0
-    leftLine.Parent = parent
+	local defaultBg = bg or StudioTheme.btnBg
+	local hoverBg = (bg == StudioTheme.blue and StudioTheme.blueHover)
+		or (bg == StudioTheme.red and StudioTheme.redHover)
+		or (bg == StudioTheme.green and StudioTheme.greenHover)
+		or StudioTheme.btnHover
 
-    local bottomLine = Instance.new("Frame")
-    bottomLine.AnchorPoint = Vector2.new(0, 1)
-    bottomLine.Position = UDim2.new(0, 0, 1, 0)
-    bottomLine.Size = UDim2.new(1, 0, 0, 1)
-    bottomLine.BackgroundColor3 = C.borderDark
-    bottomLine.BorderSizePixel = 0
-    bottomLine.Parent = parent
+	b.MouseEnter:Connect(function()
+		b.BackgroundColor3 = hoverBg
+	end)
+	b.MouseLeave:Connect(function()
+		b.BackgroundColor3 = defaultBg
+	end)
 
-    local rightLine = Instance.new("Frame")
-    rightLine.AnchorPoint = Vector2.new(1, 0)
-    rightLine.Position = UDim2.new(1, 0, 0, 0)
-    rightLine.Size = UDim2.new(0, 1, 1, 0)
-    rightLine.BackgroundColor3 = C.borderDark
-    rightLine.BorderSizePixel = 0
-    rightLine.Parent = parent
+	return b
 end
 
-local function makeButton(parent, text, w, h, bg, fg)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0, w, 0, h)
-    b.BackgroundColor3 = bg or C.panel
-    b.Text = text
-    b.TextColor3 = fg or C.text
-    b.TextSize = 12
-    b.Font = Enum.Font.ArialBold
-    b.AutoButtonColor = false
-    b.BorderSizePixel = 0
-    b.ClipsDescendants = true
-    b.Parent = parent
-    bevel(b)
-    return b
-end
-
--- Core UI Setup
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "BevelEmoteHub"
+ScreenGui.Name = "StudioEmoteHub"
+ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = (get_hidden_gui and get_hidden_gui()) or CoreGui
+ScreenGui.Parent = targetGuiParent
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 480, 0, 420)
-MainFrame.Position = UDim2.new(0.5, -240, 0.5, -210)
-MainFrame.BackgroundColor3 = C.bg
-MainFrame.BorderSizePixel = 0
+MainFrame.Size = UDim2.new(0, 510, 0, 440)
+MainFrame.Position = UDim2.new(0.5, -255, 0.5, -220)
+MainFrame.BackgroundColor3 = StudioTheme.windowBg
+MainFrame.BorderSizePixel = 1
+MainFrame.BorderColor3 = StudioTheme.border
 MainFrame.Visible = false
 MainFrame.Active = true
+MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
-bevel(MainFrame)
 
 local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 28)
-TopBar.BackgroundColor3 = C.top
-TopBar.BorderSizePixel = 0
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 26)
+TopBar.BackgroundColor3 = StudioTheme.headerBg
+TopBar.BorderSizePixel = 1
+TopBar.BorderColor3 = StudioTheme.border
 TopBar.Parent = MainFrame
-bevel(TopBar)
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -40, 1, 0)
 Title.Position = UDim2.new(0, 8, 0, 0)
 Title.BackgroundTransparency = 1
-Title.RichText = true
-Title.Text = "Potassium Emote hub"
-Title.TextColor3 = C.text
+Title.Text = "Toolbox - Animation & Emote Explorer"
+Title.TextColor3 = StudioTheme.text
 Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Font = Enum.Font.ArialBold
+Title.Font = Enum.Font.SourceSansSemibold
 Title.TextSize = 13
 Title.Parent = TopBar
 
-local CloseBtn = makeButton(TopBar, "X", 20, 20, C.red, C.text)
-CloseBtn.Position = UDim2.new(1, -24, 0, 4)
-CloseBtn.Activated:Connect(function() MainFrame.Visible = false end)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 26, 1, 0)
+CloseBtn.Position = UDim2.new(1, -26, 0, 0)
+CloseBtn.BackgroundColor3 = StudioTheme.headerBg
+CloseBtn.BorderSizePixel = 0
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = StudioTheme.textMuted
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.TextSize = 12
+CloseBtn.Parent = TopBar
 
-local dragging, dragInput, dragStart, startPos
+CloseBtn.MouseEnter:Connect(function()
+	CloseBtn.BackgroundColor3 = StudioTheme.red
+	CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+end)
+CloseBtn.MouseLeave:Connect(function()
+	CloseBtn.BackgroundColor3 = StudioTheme.headerBg
+	CloseBtn.TextColor3 = StudioTheme.textMuted
+end)
+CloseBtn.Activated:Connect(function()
+	MainFrame.Visible = false
+end)
+
+local dragging, dragStart, startPos
 TopBar.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
 		dragStart = input.Position
 		startPos = MainFrame.Position
 	end
 end)
 TopBar.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
 end)
 UserInputService.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 		local delta = input.Position - dragStart
 		MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 	end
 end)
 
--- Tabs
-local CatalogTabBtn = makeButton(MainFrame, "Catalog", 240, 26, C.panel, C.text)
-CatalogTabBtn.Position = UDim2.new(0, 0, 0, 28)
+local TabStrip = Instance.new("Frame")
+TabStrip.Name = "TabStrip"
+TabStrip.Size = UDim2.new(1, 0, 0, 26)
+TabStrip.Position = UDim2.new(0, 0, 0, 26)
+TabStrip.BackgroundColor3 = StudioTheme.tabInactive
+TabStrip.BorderSizePixel = 1
+TabStrip.BorderColor3 = StudioTheme.border
+TabStrip.Parent = MainFrame
 
-local FavTabBtn = makeButton(MainFrame, "Favorites", 240, 26, C.bg, C.textMuted)
-FavTabBtn.Position = UDim2.new(0.5, 0, 0, 28)
+local CatalogTabBtn = Instance.new("TextButton")
+CatalogTabBtn.Size = UDim2.new(0.5, 0, 1, 0)
+CatalogTabBtn.Position = UDim2.new(0, 0, 0, 0)
+CatalogTabBtn.BackgroundColor3 = StudioTheme.tabActive
+CatalogTabBtn.BorderSizePixel = 1
+CatalogTabBtn.BorderColor3 = StudioTheme.border
+CatalogTabBtn.Text = "Catalog Animations"
+CatalogTabBtn.TextColor3 = StudioTheme.text
+CatalogTabBtn.Font = Enum.Font.SourceSansSemibold
+CatalogTabBtn.TextSize = 12
+CatalogTabBtn.Parent = TabStrip
 
--- Containers
+local CatalogTabAccent = Instance.new("Frame")
+CatalogTabAccent.Size = UDim2.new(1, 0, 0, 2)
+CatalogTabAccent.Position = UDim2.new(0, 0, 0, 0)
+CatalogTabAccent.BackgroundColor3 = StudioTheme.blue
+CatalogTabAccent.BorderSizePixel = 0
+CatalogTabAccent.Parent = CatalogTabBtn
+
+local FavTabBtn = Instance.new("TextButton")
+FavTabBtn.Size = UDim2.new(0.5, 0, 1, 0)
+FavTabBtn.Position = UDim2.new(0.5, 0, 0, 0)
+FavTabBtn.BackgroundColor3 = StudioTheme.tabInactive
+FavTabBtn.BorderSizePixel = 1
+FavTabBtn.BorderColor3 = StudioTheme.border
+FavTabBtn.Text = "Favorites"
+FavTabBtn.TextColor3 = StudioTheme.textMuted
+FavTabBtn.Font = Enum.Font.SourceSansSemibold
+FavTabBtn.TextSize = 12
+FavTabBtn.Parent = TabStrip
+
+local FavTabAccent = Instance.new("Frame")
+FavTabAccent.Size = UDim2.new(1, 0, 0, 2)
+FavTabAccent.Position = UDim2.new(0, 0, 0, 0)
+FavTabAccent.BackgroundColor3 = StudioTheme.blue
+FavTabAccent.BorderSizePixel = 0
+FavTabAccent.Visible = false
+FavTabAccent.Parent = FavTabBtn
+
+local FOOTER_H = 22
 local CatalogContainer = Instance.new("Frame")
-CatalogContainer.Size = UDim2.new(1, 0, 1, -54)
-CatalogContainer.Position = UDim2.new(0, 0, 0, 54)
+CatalogContainer.Size = UDim2.new(1, -8, 1, -(52 + FOOTER_H + 8))
+CatalogContainer.Position = UDim2.new(0, 4, 0, 56)
 CatalogContainer.BackgroundTransparency = 1
 CatalogContainer.Parent = MainFrame
 
 local FavContainer = Instance.new("Frame")
-FavContainer.Size = UDim2.new(1, 0, 1, -54)
-FavContainer.Position = UDim2.new(0, 0, 0, 54)
+FavContainer.Size = UDim2.new(1, -8, 1, -(52 + FOOTER_H + 8))
+FavContainer.Position = UDim2.new(0, 4, 0, 56)
 FavContainer.BackgroundTransparency = 1
 FavContainer.Visible = false
 FavContainer.Parent = MainFrame
 
-CatalogTabBtn.MouseButton1Click:Connect(function()
-	CatalogContainer.Visible = true
-	FavContainer.Visible = false
-	CatalogTabBtn.BackgroundColor3 = C.panel
-	CatalogTabBtn.TextColor3 = C.text
-	FavTabBtn.BackgroundColor3 = C.bg
-	FavTabBtn.TextColor3 = C.textMuted
-end)
+local function selectTab(isCatalog)
+	CatalogContainer.Visible = isCatalog
+	FavContainer.Visible = not isCatalog
+	CatalogTabBtn.BackgroundColor3 = isCatalog and StudioTheme.tabActive or StudioTheme.tabInactive
+	CatalogTabBtn.TextColor3 = isCatalog and StudioTheme.text or StudioTheme.textMuted
+	CatalogTabAccent.Visible = isCatalog
 
-FavTabBtn.MouseButton1Click:Connect(function()
-	CatalogContainer.Visible = false
-	FavContainer.Visible = true
-	FavTabBtn.BackgroundColor3 = C.panel
-	FavTabBtn.TextColor3 = C.text
-	CatalogTabBtn.BackgroundColor3 = C.bg
-	CatalogTabBtn.TextColor3 = C.textMuted
-end)
+	FavTabBtn.BackgroundColor3 = (not isCatalog) and StudioTheme.tabActive or StudioTheme.tabInactive
+	FavTabBtn.TextColor3 = (not isCatalog) and StudioTheme.text or StudioTheme.textMuted
+	FavTabAccent.Visible = not isCatalog
+end
 
--- Controls (Catalog)
+CatalogTabBtn.MouseButton1Click:Connect(function() selectTab(true) end)
+FavTabBtn.MouseButton1Click:Connect(function() selectTab(false) end)
+
+local CatToolbar = Instance.new("Frame")
+CatToolbar.Size = UDim2.new(1, 0, 0, 32)
+CatToolbar.BackgroundColor3 = StudioTheme.panelAlt
+CatToolbar.BorderSizePixel = 1
+CatToolbar.BorderColor3 = StudioTheme.border
+CatToolbar.Parent = CatalogContainer
+
 local SearchBox = Instance.new("TextBox")
-SearchBox.Size = UDim2.new(0, 180, 0, 24)
-SearchBox.Position = UDim2.new(0, 8, 0, 8)
-SearchBox.BackgroundColor3 = C.panel2
-SearchBox.TextColor3 = C.text
-SearchBox.PlaceholderText = " Search Catalog..."
-SearchBox.PlaceholderColor3 = C.textDim
-SearchBox.Font = Enum.Font.ArialBold
+SearchBox.Size = UDim2.new(0, 210, 0, 22)
+SearchBox.Position = UDim2.new(0, 6, 0, 5)
+SearchBox.BackgroundColor3 = StudioTheme.insetBg
+SearchBox.TextColor3 = StudioTheme.text
+SearchBox.PlaceholderText = "Search Catalog (Press Enter)..."
+SearchBox.PlaceholderColor3 = StudioTheme.textDim
+SearchBox.Font = Enum.Font.SourceSans
 SearchBox.TextSize = 12
 SearchBox.TextXAlignment = Enum.TextXAlignment.Left
 SearchBox.ClearTextOnFocus = false
-SearchBox.BorderSizePixel = 0
-SearchBox.Parent = CatalogContainer
-bevel(SearchBox)
+SearchBox.BorderSizePixel = 1
+SearchBox.BorderColor3 = StudioTheme.border
+SearchBox.Parent = CatToolbar
 
-local LoopCatBtn = makeButton(CatalogContainer, "🔁 Loop: ON", 90, 24, C.green, C.text)
-LoopCatBtn.Position = UDim2.new(0, 196, 0, 8)
+local LoopCatBtn = makeStudioButton(CatToolbar, "Loop: ON", 84, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
+LoopCatBtn.Position = UDim2.new(0, 222, 0, 5)
 
-local RandomCatBtn = makeButton(CatalogContainer, "🎲 Random", 90, 24, C.panel2, C.text)
-RandomCatBtn.Position = UDim2.new(0, 294, 0, 8)
+local RandomCatBtn = makeStudioButton(CatToolbar, "Random", 76, 22, StudioTheme.btnBg, StudioTheme.text)
+RandomCatBtn.Position = UDim2.new(0, 312, 0, 5)
 
-local StopCatBtn = makeButton(CatalogContainer, "⏹ Stop", 80, 24, C.red, C.text)
-StopCatBtn.Position = UDim2.new(0, 392, 0, 8)
+local StopCatBtn = makeStudioButton(CatToolbar, "Stop", 60, 22, StudioTheme.red, Color3.fromRGB(255, 255, 255))
+StopCatBtn.Position = UDim2.new(0, 394, 0, 5)
 StopCatBtn.MouseButton1Click:Connect(StopEmote)
 
--- Controls (Favorites)
-local LoopFavBtn = makeButton(FavContainer, "🔁 Loop: ON", 120, 24, C.green, C.text)
-LoopFavBtn.Position = UDim2.new(0, 8, 0, 8)
+local FavToolbar = Instance.new("Frame")
+FavToolbar.Size = UDim2.new(1, 0, 0, 32)
+FavToolbar.BackgroundColor3 = StudioTheme.panelAlt
+FavToolbar.BorderSizePixel = 1
+FavToolbar.BorderColor3 = StudioTheme.border
+FavToolbar.Parent = FavContainer
 
-local RandomFavBtn = makeButton(FavContainer, "🎲 Random", 120, 24, C.panel2, C.text)
-RandomFavBtn.Position = UDim2.new(0, 136, 0, 8)
+local LoopFavBtn = makeStudioButton(FavToolbar, "Loop: ON", 90, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
+LoopFavBtn.Position = UDim2.new(0, 6, 0, 5)
 
-local StopFavBtn = makeButton(FavContainer, "⏹ Stop Emote", 120, 24, C.red, C.text)
-StopFavBtn.Position = UDim2.new(0, 264, 0, 8)
+local RandomFavBtn = makeStudioButton(FavToolbar, "Play Random", 90, 22, StudioTheme.btnBg, StudioTheme.text)
+RandomFavBtn.Position = UDim2.new(0, 102, 0, 5)
+
+local StopFavBtn = makeStudioButton(FavToolbar, "Stop", 70, 22, StudioTheme.red, Color3.fromRGB(255, 255, 255))
+StopFavBtn.Position = UDim2.new(0, 198, 0, 5)
 StopFavBtn.MouseButton1Click:Connect(StopEmote)
 
 local function UpdateLoopState()
-	local txt = LoopEmotes and "🔁 Loop: ON" or "🔁 Loop: OFF"
-	local bg = LoopEmotes and C.green or C.panel2
+	local txt = LoopEmotes and "Loop: ON" or "Loop: OFF"
+	local bg = LoopEmotes and StudioTheme.green or StudioTheme.btnBg
+	local fg = LoopEmotes and Color3.fromRGB(255, 255, 255) or StudioTheme.textMuted
 	LoopCatBtn.Text = txt
 	LoopCatBtn.BackgroundColor3 = bg
+	LoopCatBtn.TextColor3 = fg
 	LoopFavBtn.Text = txt
 	LoopFavBtn.BackgroundColor3 = bg
+	LoopFavBtn.TextColor3 = fg
 	if currentEmoteTrack then
 		currentEmoteTrack.Looped = LoopEmotes
 	end
@@ -272,37 +381,40 @@ LoopFavBtn.MouseButton1Click:Connect(function()
 	UpdateLoopState()
 end)
 
--- Scrolling Grids
 local function CreateScrollFrame(parent)
-    local Wrapper = Instance.new("Frame")
-    Wrapper.Size = UDim2.new(1, -16, 1, -48)
-    Wrapper.Position = UDim2.new(0, 8, 0, 40)
-    Wrapper.BackgroundColor3 = C.panel
-    Wrapper.BorderSizePixel = 0
-    Wrapper.Parent = parent
-    bevel(Wrapper)
+	local Wrapper = Instance.new("Frame")
+	Wrapper.Size = UDim2.new(1, 0, 1, -38)
+	Wrapper.Position = UDim2.new(0, 0, 0, 36)
+	Wrapper.BackgroundColor3 = StudioTheme.insetBg
+	Wrapper.BorderSizePixel = 1
+	Wrapper.BorderColor3 = StudioTheme.border
+	Wrapper.ClipsDescendants = true
+	Wrapper.Parent = parent
 
 	local Scroll = Instance.new("ScrollingFrame")
-	Scroll.Size = UDim2.new(1, -4, 1, -4)
-	Scroll.Position = UDim2.new(0, 2, 0, 2)
+	Scroll.Size = UDim2.new(1, -2, 1, -2)
+	Scroll.Position = UDim2.new(0, 1, 0, 1)
 	Scroll.BackgroundTransparency = 1
-    Scroll.BorderSizePixel = 0
-	Scroll.ScrollBarThickness = 4
-    Scroll.ScrollBarImageColor3 = C.borderLight
+	Scroll.BorderSizePixel = 0
+	Scroll.ScrollBarThickness = 5
+	Scroll.ScrollBarImageColor3 = StudioTheme.borderSubtle
 	Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 	Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	Scroll.ClipsDescendants = true
 	Scroll.Parent = Wrapper
 
 	local Grid = Instance.new("UIGridLayout")
-	Grid.CellSize = UDim2.new(0, 86, 0, 110)
+	Grid.CellSize = UDim2.new(0, 92, 0, 116)
 	Grid.CellPadding = UDim2.new(0, 6, 0, 6)
 	Grid.SortOrder = Enum.SortOrder.LayoutOrder
 	Grid.Parent = Scroll
-    
-    local Pad = Instance.new("UIPadding")
-    Pad.PaddingTop = UDim.new(0, 4)
-    Pad.PaddingLeft = UDim.new(0, 4)
-    Pad.Parent = Scroll
+
+	local Pad = Instance.new("UIPadding")
+	Pad.PaddingTop = UDim.new(0, 6)
+	Pad.PaddingBottom = UDim.new(0, 6)
+	Pad.PaddingLeft = UDim.new(0, 6)
+	Pad.PaddingRight = UDim.new(0, 6)
+	Pad.Parent = Scroll
 
 	return Scroll
 end
@@ -310,7 +422,26 @@ end
 local CatScroll = CreateScrollFrame(CatalogContainer)
 local FavScroll = CreateScrollFrame(FavContainer)
 
--- Emote Logic
+local Footer = Instance.new("Frame")
+Footer.Name = "StudioFooter"
+Footer.Size = UDim2.new(1, 0, 0, FOOTER_H)
+Footer.Position = UDim2.new(0, 0, 1, -FOOTER_H)
+Footer.BackgroundColor3 = StudioTheme.headerBg
+Footer.BorderSizePixel = 1
+Footer.BorderColor3 = StudioTheme.border
+Footer.Parent = MainFrame
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Size = UDim2.new(1, -12, 1, 0)
+StatusLabel.Position = UDim2.new(0, 6, 0, 0)
+StatusLabel.Text = "Shortcuts: [ , ] Toggle UI  |  [ X ] Stop Emote  |  Status: Ready"
+StatusLabel.TextColor3 = StudioTheme.textDim
+StatusLabel.TextSize = 11
+StatusLabel.Font = Enum.Font.SourceSans
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.Parent = Footer
+
 local function GetRawEmoteId(catalogId, name)
 	if EmoteCache[catalogId] then return EmoteCache[catalogId] end
 
@@ -319,7 +450,6 @@ local function GetRawEmoteId(catalogId, name)
 		local anim = objs[1]:FindFirstChildOfClass("Animation", true) or (objs[1]:IsA("Animation") and objs[1])
 		if anim and anim.AnimationId and anim.AnimationId ~= "" then
 			EmoteCache[catalogId] = anim.AnimationId
-			warn("[Velq Emotes] Success: Method 1 (game:GetObjects) utilized for " .. tostring(catalogId))
 			return anim.AnimationId
 		end
 	end
@@ -329,7 +459,6 @@ local function GetRawEmoteId(catalogId, name)
 		local anim = asset:FindFirstChildOfClass("Animation", true) or (asset:IsA("Animation") and asset)
 		if anim and anim.AnimationId and anim.AnimationId ~= "" then
 			EmoteCache[catalogId] = anim.AnimationId
-			warn("[Velq Emotes] Success: Method 2 (InsertService:LoadAsset) utilized for " .. tostring(catalogId))
 			return anim.AnimationId
 		end
 	end
@@ -348,13 +477,11 @@ local function GetRawEmoteId(catalogId, name)
 				local rawId = track.Animation.AnimationId
 				track:Stop()
 				EmoteCache[catalogId] = rawId
-				warn("[Velq Emotes] Success: Method 3 (Native HumanoidDescription) utilized for " .. tostring(catalogId))
 				return rawId
 			end
 		end
 	end
 
-	warn("[Velq Emotes] CRITICAL: All 3 extraction methods failed for ID " .. tostring(catalogId))
 	return nil
 end
 
@@ -380,44 +507,65 @@ local function PlayEmote(id, name)
 		customTrack:Play()
 		currentEmoteTrack = customTrack
 		forceEmote = true
+		activeEmoteName = name or "Emote"
+		StatusLabel.Text = string.format("Playing: %s  |  Loop: %s  |  [ X ] to Stop", activeEmoteName, LoopEmotes and "ON" or "OFF")
 	end
 end
 
 local function CreateEmoteCard(emote, parentScroll)
 	local Card = Instance.new("Frame")
-	Card.BackgroundColor3 = C.panel2
-	Card.BorderSizePixel = 0
-    bevel(Card)
+	Card.BackgroundColor3 = StudioTheme.cardBg
+	Card.BorderSizePixel = 1
+	Card.BorderColor3 = StudioTheme.border
+	Card.ClipsDescendants = true
+
+	local IconContainer = Instance.new("Frame")
+	IconContainer.Size = UDim2.new(1, -6, 0, 80)
+	IconContainer.Position = UDim2.new(0, 3, 0, 3)
+	IconContainer.BackgroundColor3 = StudioTheme.insetBg
+	IconContainer.BorderSizePixel = 1
+	IconContainer.BorderColor3 = StudioTheme.border
+	IconContainer.Parent = Card
 
 	local Icon = Instance.new("ImageButton")
-	Icon.Size = UDim2.new(1, 0, 0, 80)
+	Icon.Size = UDim2.new(1, 0, 1, 0)
 	Icon.BackgroundTransparency = 1
 	Icon.Image = "rbxthumb://type=Asset&id=" .. emote.id .. "&w=150&h=150"
-	Icon.Parent = Card
+	Icon.Parent = IconContainer
 	
 	local NameLabel = Instance.new("TextLabel")
-	NameLabel.Size = UDim2.new(1, -2, 0, 26)
-	NameLabel.Position = UDim2.new(0, 2, 0, 82)
+	NameLabel.Size = UDim2.new(1, -6, 0, 26)
+	NameLabel.Position = UDim2.new(0, 3, 0, 86)
 	NameLabel.BackgroundTransparency = 1
 	NameLabel.Text = emote.name
-	NameLabel.TextColor3 = C.text
-	NameLabel.Font = Enum.Font.ArialBold
+	NameLabel.TextColor3 = StudioTheme.text
+	NameLabel.Font = Enum.Font.SourceSansSemibold
 	NameLabel.TextSize = 11
 	NameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-    NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	NameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	NameLabel.TextYAlignment = Enum.TextYAlignment.Top
 	NameLabel.Parent = Card
 
 	local FavToggle = Instance.new("TextButton")
 	FavToggle.Size = UDim2.new(0, 20, 0, 20)
-	FavToggle.Position = UDim2.new(1, -22, 0, 4)
+	FavToggle.Position = UDim2.new(1, -22, 0, 2)
 	FavToggle.BackgroundTransparency = 1
-	FavToggle.TextSize = 14
-	FavToggle.Font = Enum.Font.ArialBold
+	FavToggle.TextSize = 11
+	FavToggle.Font = Enum.Font.SourceSansBold
 	FavToggle.Parent = Card
 
 	local isFav = table.find(FavoritedEmotes, emote.id)
-	FavToggle.Text = isFav and "⭐" or "☆"
-	FavToggle.TextColor3 = isFav and C.yellow or C.textMuted
+	FavToggle.Text = isFav and "[X]" or "[+]"
+	FavToggle.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
+
+	Card.MouseEnter:Connect(function()
+		Card.BackgroundColor3 = StudioTheme.cardHover
+		Card.BorderColor3 = StudioTheme.blue
+	end)
+	Card.MouseLeave:Connect(function()
+		Card.BackgroundColor3 = StudioTheme.cardBg
+		Card.BorderColor3 = StudioTheme.border
+	end)
 
 	Icon.MouseButton1Click:Connect(function()
 		PlayEmote(emote.id, emote.name)
@@ -427,12 +575,12 @@ local function CreateEmoteCard(emote, parentScroll)
 		local idx = table.find(FavoritedEmotes, emote.id)
 		if idx then
 			table.remove(FavoritedEmotes, idx)
-			FavToggle.Text = "☆"
-			FavToggle.TextColor3 = C.textMuted
+			FavToggle.Text = "[+]"
+			FavToggle.TextColor3 = StudioTheme.textDim
 		else
 			table.insert(FavoritedEmotes, emote.id)
-			FavToggle.Text = "⭐"
-			FavToggle.TextColor3 = C.yellow
+			FavToggle.Text = "[X]"
+			FavToggle.TextColor3 = StudioTheme.yellow
 		end
 		SaveFavorites()
 		RefreshFavorites()
@@ -445,6 +593,7 @@ function RefreshFavorites()
 	for _, child in ipairs(FavScroll:GetChildren()) do
 		if child:IsA("Frame") then child:Destroy() end
 	end
+	FavTabBtn.Text = string.format("Favorites (%d)", #FavoritedEmotes)
 	for _, id in ipairs(FavoritedEmotes) do
 		local emoteData = {id = id, name = "Saved Emote"}
 		for _, e in ipairs(Emotes) do
@@ -481,7 +630,7 @@ local function FetchCatalog(keyword)
 		local success, pages = pcall(function()
 			local params = CatalogSearchParams.new()
 			params.AssetTypes = {Enum.AvatarAssetType.EmoteAnimation}
-			params.SortType = keyword and Enum.CatalogSortType.Relevance or Enum.CatalogSortType.RecentlyUpdated
+			params.SortType = (keyword and keyword ~= "") and Enum.CatalogSortType.Relevance or Enum.CatalogSortType.RecentlyUpdated
 			if keyword and keyword ~= "" then params.SearchKeyword = keyword end
 			params.Limit = 120
 			return AvatarEditorService:SearchCatalog(params)
@@ -498,7 +647,7 @@ local function FetchCatalog(keyword)
 	end)
 end
 
-CatScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+local canvasConn = CatScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
 	local maxScroll = CatScroll.AbsoluteCanvasSize.Y - CatScroll.AbsoluteWindowSize.Y
 	if CatScroll.CanvasPosition.Y >= maxScroll - 50 and not isLoadingMore then
 		if catalogPages and not catalogPages.IsFinished then
@@ -512,6 +661,7 @@ CatScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
 		end
 	end
 end)
+table.insert(activeConnections, canvasConn)
 
 SearchBox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
@@ -519,7 +669,7 @@ SearchBox.FocusLost:Connect(function(enterPressed)
 	end
 end)
 
-UserInputService.InputBegan:Connect(function(input, processed)
+local keyConn = UserInputService.InputBegan:Connect(function(input, processed)
 	if not processed then
 		if input.KeyCode == Enum.KeyCode.Comma then
 			MainFrame.Visible = not MainFrame.Visible
@@ -528,6 +678,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		end
 	end
 end)
+table.insert(activeConnections, keyConn)
 
 RandomCatBtn.MouseButton1Click:Connect(function()
 	if #Emotes > 0 then
@@ -539,15 +690,16 @@ end)
 RandomFavBtn.MouseButton1Click:Connect(function()
 	if #FavoritedEmotes > 0 then
 		local randId = FavoritedEmotes[math.random(1, #FavoritedEmotes)]
-		PlayEmote(randId, "Emote")
+		PlayEmote(randId, "Saved Emote")
 	end
 end)
 
-RunService.Heartbeat:Connect(function()
+local heartConn = RunService.Heartbeat:Connect(function()
 	if forceEmote and currentEmoteTrack and currentEmoteTrack.Parent then
 		if not currentEmoteTrack.IsPlaying then
 			if not LoopEmotes and currentEmoteTrack.TimePosition >= currentEmoteTrack.Length - 0.05 then
 				forceEmote = false
+				activeEmoteName = "None"
 				return
 			end
 			currentEmoteTrack:Play()
@@ -562,5 +714,19 @@ RunService.Heartbeat:Connect(function()
 		end
 	end
 end)
+table.insert(activeConnections, heartConn)
 
 FetchCatalog()
+
+env._EmoteHubCleanup = function()
+	StopEmote()
+	for _, conn in ipairs(activeConnections) do
+		pcall(function() conn:Disconnect() end)
+	end
+	table.clear(activeConnections)
+	cleanAllPreviousInstances({
+		"StudioEmoteHub",
+		"BevelEmoteHub",
+		"PotassiumEmoteHub"
+	})
+end
