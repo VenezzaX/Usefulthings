@@ -5,9 +5,13 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local env = getgenv and getgenv() or _G
 
--- Helper function to identify the current executor dynamically
+if env._PassBypassCleanup then
+    pcall(env._PassBypassCleanup)
+    env._PassBypassCleanup = nil
+end
+
 local function getExecutorName()
     local name = "Executor"
     local success, result = pcall(function()
@@ -27,10 +31,45 @@ local currentExecutor = getExecutorName()
 local passName = currentExecutor .. " Pass"
 local uiName = currentExecutor .. "PassUI"
 
--- Clean up any previous instances using the dynamic name
-if playerGui:FindFirstChild(uiName) then
-    playerGui[uiName]:Destroy()
+local function getGuiParent()
+    local success, core = pcall(function()
+        return (gethui and gethui()) or (get_hidden_gui and get_hidden_gui()) or game:GetService("CoreGui")
+    end)
+    if success and core then
+        return core
+    end
+    return player:WaitForChild("PlayerGui")
 end
+
+local targetGuiParent = getGuiParent()
+
+local function cleanAllPreviousInstances(names)
+    local containers = {}
+    pcall(function() if gethui then table.insert(containers, gethui()) end end)
+    pcall(function() if get_hidden_gui then table.insert(containers, get_hidden_gui()) end end)
+    pcall(function() table.insert(containers, game:GetService("CoreGui")) end)
+    pcall(function() if player and player:FindFirstChild("PlayerGui") then table.insert(containers, player.PlayerGui) end end)
+
+    for _, container in ipairs(containers) do
+        pcall(function()
+            for _, name in ipairs(names) do
+                local found = container:FindFirstChild(name)
+                while found do
+                    found:Destroy()
+                    found = container:FindFirstChild(name)
+                end
+            end
+        end)
+    end
+end
+
+cleanAllPreviousInstances({
+    uiName,
+    "PassUI",
+    "StudioPassMonitor",
+    "PassReopenBtn",
+    "StudioSettingsModal"
+})
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = uiName
@@ -40,15 +79,15 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.DisplayOrder = 999999
 screenGui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.None
 screenGui.ScreenInsets = Enum.ScreenInsets.None
-screenGui.Parent = playerGui
+screenGui.Parent = targetGuiParent
 
 local isMobile = UserInputService.TouchEnabled
 local autoSpeed = 100
 local uiVisible = true
 local autoClipEnabled = false 
 local blacklist = {}          
-local webhookUrl = ""         -- FEATURE: Discord Webhook URL
-local antiPrompt = false       -- FEATURE: Block purchase screen overlays
+local webhookUrl = ""
+local antiPrompt = false
 
 local reopenButton = nil
 local settingsWindow = nil
@@ -57,38 +96,45 @@ local eventCount = 0
 local entries = {}
 local activeAuto = {}
 local activeSpam = {}
+local activeConnections = {}
 
-local C = {
-    bg = Color3.fromRGB(36, 39, 47),
-    panel = Color3.fromRGB(58, 62, 74),
-    panel2 = Color3.fromRGB(70, 75, 89),
-    top = Color3.fromRGB(82, 88, 104),
-    borderDark = Color3.fromRGB(24, 26, 31),
-    borderLight = Color3.fromRGB(112, 119, 138),
-    text = Color3.fromRGB(241, 243, 247),
-    textMuted = Color3.fromRGB(210, 214, 223),
-    textDim = Color3.fromRGB(165, 171, 184),
-    blue = Color3.fromRGB(97, 150, 228),
-    green = Color3.fromRGB(103, 208, 120),
-    red = Color3.fromRGB(221, 103, 103),
-    yellow = Color3.fromRGB(222, 186, 90),
-    purple = Color3.fromRGB(156, 129, 220),
+local StudioTheme = {
+    windowBg       = Color3.fromRGB(37, 37, 38),
+    headerBg       = Color3.fromRGB(45, 45, 48),
+    panelBg        = Color3.fromRGB(42, 42, 45),
+    panelAlt       = Color3.fromRGB(32, 32, 34),
+    insetBg        = Color3.fromRGB(26, 26, 28),
+    categoryBg     = Color3.fromRGB(50, 50, 54),
+    border         = Color3.fromRGB(20, 20, 22),
+    borderSubtle   = Color3.fromRGB(55, 55, 58),
+    text           = Color3.fromRGB(225, 225, 228),
+    textMuted      = Color3.fromRGB(160, 160, 165),
+    textDim        = Color3.fromRGB(115, 115, 120),
+    blue           = Color3.fromRGB(0, 122, 204),
+    blueHover      = Color3.fromRGB(28, 140, 224), 
+    green          = Color3.fromRGB(76, 175, 80),
+    greenHover     = Color3.fromRGB(92, 195, 96),  
+    red            = Color3.fromRGB(215, 60, 60),
+    redHover       = Color3.fromRGB(235, 75, 75),   
+    yellow         = Color3.fromRGB(220, 170, 50),
+    purple         = Color3.fromRGB(160, 120, 220),
+    btnBg          = Color3.fromRGB(50, 50, 54),
+    btnHover       = Color3.fromRGB(65, 65, 70),
 }
 
 local SIGNAL_COLORS = {
-    Product = C.blue,
-    Gamepass = C.purple,
-    Bulk = C.yellow,
-    Purchase = C.green,
+    Product = StudioTheme.blue,
+    Gamepass = StudioTheme.purple,
+    Bulk = StudioTheme.yellow,
+    Purchase = StudioTheme.green,
 }
 
-local TITLE_H = 28
-local FILTER_H = 24 
-local FOOTER_H = 30
-local ROW_H = 26
+local TITLE_H = 26
+local FILTER_H = 28 
+local FOOTER_H = 24
+local ROW_H = 28
 local BTN_H = 20
 
--- FEATURE: Save/Load Config persistence
 local function saveConfig()
     if writefile then
         local data = {
@@ -117,9 +163,8 @@ local function loadConfig()
         end
     end
 end
-loadConfig() -- Call early to load configs
+loadConfig()
 
--- FEATURE: Webhook poster
 local function sendWebhook(label, id)
     if webhookUrl == "" then return end
     local req = syn and syn.request or http and http.request or request
@@ -131,7 +176,7 @@ local function sendWebhook(label, id)
                 Headers = {["Content-Type"] = "application/json"},
                 Body = HttpService:JSONEncode({
                     embeds = {{
-                        title = "🛒 Marketplace Prompt Intercepted",
+                        title = "Marketplace Prompt Intercepted",
                         color = 10181046,
                         fields = {
                             {name = "Asset Type", value = label, inline = true},
@@ -146,160 +191,122 @@ local function sendWebhook(label, id)
     end
 end
 
-local function stroke(parent, color, thickness)
-    local s = Instance.new("UIStroke")
-    s.Color = color or C.borderDark
-    s.Thickness = thickness or 1
-    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    s.Parent = parent
-    return s
-end
-
-local function corner(parent, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 0)
-    c.Parent = parent
-    return c
-end
-
-local function pad(parent, l, r, t, b)
-    local p = Instance.new("UIPadding")
-    p.PaddingLeft = UDim.new(0, l or 0)
-    p.PaddingRight = UDim.new(0, r or 0)
-    p.PaddingTop = UDim.new(0, t or 0)
-    p.PaddingBottom = UDim.new(0, b or 0)
-    p.Parent = parent
-    return p
-end
-
 local function setButtonState(btn, bg, fg)
     if btn and btn.Parent then
         btn.BackgroundColor3 = bg
-        btn.TextColor3 = fg
+        if fg then btn.TextColor3 = fg end
     end
 end
 
 local function addDesktopHover(btn, normalBg, hoverBg, normalFg, hoverFg)
     if isMobile then return end
     btn.MouseEnter:Connect(function()
-        setButtonState(btn, hoverBg, hoverFg)
+        setButtonState(btn, hoverBg, hoverFg or StudioTheme.text)
     end)
     btn.MouseLeave:Connect(function()
-        setButtonState(btn, normalBg, normalFg)
+        setButtonState(btn, normalBg, normalFg or StudioTheme.text)
     end)
 end
 
-local function bevel(parent)
-    local topLine = Instance.new("Frame")
-    topLine.Size = UDim2.new(1, 0, 0, 1)
-    topLine.BackgroundColor3 = C.borderLight
-    topLine.BorderSizePixel = 0
-    topLine.Parent = parent
-
-    local leftLine = Instance.new("Frame")
-    leftLine.Size = UDim2.new(0, 1, 1, 0)
-    leftLine.BackgroundColor3 = C.borderLight
-    leftLine.BorderSizePixel = 0
-    leftLine.Parent = parent
-
-    local bottomLine = Instance.new("Frame")
-    bottomLine.AnchorPoint = Vector2.new(0, 1)
-    bottomLine.Position = UDim2.new(0, 0, 1, 0)
-    bottomLine.Size = UDim2.new(1, 0, 0, 1)
-    bottomLine.BackgroundColor3 = C.borderDark
-    bottomLine.BorderSizePixel = 0
-    bottomLine.Parent = parent
-
-    local rightLine = Instance.new("Frame")
-    rightLine.AnchorPoint = Vector2.new(1, 0)
-    rightLine.Position = UDim2.new(1, 0, 0, 0)
-    rightLine.Size = UDim2.new(0, 1, 1, 0)
-    rightLine.BackgroundColor3 = C.borderDark
-    rightLine.BorderSizePixel = 0
-    rightLine.Parent = parent
-end
-
-local function makeButton(parent, text, w, bg, fg)
+local function makeStudioButton(parent, text, w, h, bg, fg)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0, w, 0, BTN_H)
-    b.BackgroundColor3 = bg or C.panel
+    b.Size = UDim2.new(0, w, 0, h or BTN_H)
+    b.BackgroundColor3 = bg or StudioTheme.btnBg
     b.Text = text
-    b.TextColor3 = fg or C.text
+    b.TextColor3 = fg or StudioTheme.text
     b.TextSize = 12
-    b.Font = Enum.Font.ArialBold
+    b.Font = Enum.Font.SourceSansSemibold
     b.AutoButtonColor = false
-    b.BorderSizePixel = 0
+    b.BorderSizePixel = 1
+    b.BorderColor3 = StudioTheme.border
     b.ClipsDescendants = true
     b.Parent = parent
-    bevel(b)
+
+    local defaultBg = bg or StudioTheme.btnBg
+    local hoverBg = (bg == StudioTheme.blue and StudioTheme.blueHover)
+        or (bg == StudioTheme.red and StudioTheme.redHover)
+        or (bg == StudioTheme.green and StudioTheme.greenHover)
+        or StudioTheme.btnHover
+    addDesktopHover(b, defaultBg, hoverBg, fg or StudioTheme.text, fg or StudioTheme.text)
+
     return b
 end
 
+local function makeStudioTextBox(parent, text, width, height, placeholder, fontCode)
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, width or 60, 0, height or BTN_H)
+    box.BackgroundColor3 = StudioTheme.insetBg
+    box.Text = text or ""
+    box.PlaceholderText = placeholder or ""
+    box.PlaceholderColor3 = StudioTheme.textDim
+    box.TextColor3 = StudioTheme.text
+    box.TextSize = 12
+    box.Font = fontCode and Enum.Font.Code or Enum.Font.SourceSans
+    box.ClearTextOnFocus = false
+    box.BorderSizePixel = 1
+    box.BorderColor3 = StudioTheme.border
+    box.Parent = parent
+    return box
+end
+
 local panel = Instance.new("Frame")
-panel.Name = "Panel"
-panel.Size = isMobile and UDim2.new(0, 320, 0, 244) or UDim2.new(0, 460, 0, 274)
-panel.Position = UDim2.new(0.5, isMobile and -160 or -230, 0.5, isMobile and -122 or -137)
-panel.BackgroundColor3 = C.bg
-panel.BorderSizePixel = 0
+panel.Name = "StudioPassMonitor"
+panel.Size = isMobile and UDim2.new(0, 360, 0, 260) or UDim2.new(0, 520, 0, 310)
+panel.Position = UDim2.new(0.5, isMobile and -180 or -260, 0.5, isMobile and -130 or -155)
+panel.BackgroundColor3 = StudioTheme.windowBg
+panel.BorderSizePixel = 1
+panel.BorderColor3 = StudioTheme.border
 panel.ClipsDescendants = true
 panel.Active = true
 panel.Selectable = true
 panel.Parent = screenGui
-bevel(panel)
 
 local panelMin = Instance.new("UISizeConstraint")
-panelMin.MinSize = isMobile and Vector2.new(300, 220) or Vector2.new(430, 240)
-panelMin.MaxSize = Vector2.new(700, 500)
+panelMin.MinSize = isMobile and Vector2.new(320, 230) or Vector2.new(460, 250)
+panelMin.MaxSize = Vector2.new(800, 600)
 panelMin.Parent = panel
 
 local titleBar = Instance.new("Frame")
+titleBar.Name = "StudioTitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, TITLE_H)
-titleBar.BackgroundColor3 = C.top
-titleBar.BorderSizePixel = 0
+titleBar.BackgroundColor3 = StudioTheme.headerBg
+titleBar.BorderSizePixel = 1
+titleBar.BorderColor3 = StudioTheme.border
 titleBar.Parent = panel
-bevel(titleBar)
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Size = UDim2.new(1, -68, 1, 0)
+title.Size = UDim2.new(1, -90, 1, 0)
 title.Position = UDim2.new(0, 8, 0, 0)
-title.Text = passName
-title.TextColor3 = C.text
-title.TextSize = 14
-title.Font = Enum.Font.ArialBold
+title.Text = "Output - Marketplace Interceptor (" .. passName .. ")"
+title.TextColor3 = StudioTheme.text
+title.TextSize = 13
+title.Font = Enum.Font.SourceSansSemibold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = titleBar
 
-local clearBtn = makeButton(titleBar, "Clear", 40, C.panel2, C.text)
-clearBtn.Position = UDim2.new(1, -64, 0, 4)
-addDesktopHover(clearBtn, C.panel2, C.top, C.text, C.text)
+local clearBtn = makeStudioButton(titleBar, "Clear", 40, 18, StudioTheme.btnBg, StudioTheme.text)
+clearBtn.Position = UDim2.new(1, -72, 0, 4)
 
-local closeBtn = makeButton(titleBar, "X", 20, C.red, C.text)
-closeBtn.Position = UDim2.new(1, -22, 0, 4)
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 26, 1, 0)
+closeBtn.Position = UDim2.new(1, -26, 0, 0)
+closeBtn.BackgroundColor3 = StudioTheme.headerBg
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "X"
+closeBtn.TextColor3 = StudioTheme.textMuted
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 12
+closeBtn.Parent = titleBar
 
-local filterBar = Instance.new("Frame")
-filterBar.Size = UDim2.new(1, 0, 0, FILTER_H)
-filterBar.Position = UDim2.new(0, 0, 0, TITLE_H)
-filterBar.BackgroundColor3 = C.panel
-filterBar.BorderSizePixel = 0
-filterBar.Parent = panel
-bevel(filterBar)
-
-local filterBox = Instance.new("TextBox")
-filterBox.Size = UDim2.new(1, -16, 0, 16)
-filterBox.Position = UDim2.new(0, 8, 0, 4)
-filterBox.BackgroundColor3 = C.bg
-filterBox.PlaceholderText = "Filter by ID or Type (e.g. Gamepass, Product)..."
-filterBox.PlaceholderColor3 = C.textDim
-filterBox.Text = ""
-filterBox.TextColor3 = C.text
-filterBox.TextSize = 11
-filterBox.Font = Enum.Font.Arial
-filterBox.TextXAlignment = Enum.TextXAlignment.Left
-filterBox.BorderSizePixel = 0
-filterBox.Parent = filterBar
-bevel(filterBox)
-pad(filterBox, 4, 4, 0, 0)
+closeBtn.MouseEnter:Connect(function()
+    closeBtn.BackgroundColor3 = StudioTheme.red
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+end)
+closeBtn.MouseLeave:Connect(function()
+    closeBtn.BackgroundColor3 = StudioTheme.headerBg
+    closeBtn.TextColor3 = StudioTheme.textMuted
+end)
 
 local dragging = false
 local dragStart, startPos
@@ -325,22 +332,36 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
+local filterBar = Instance.new("Frame")
+filterBar.Name = "StudioFilterBar"
+filterBar.Size = UDim2.new(1, 0, 0, FILTER_H)
+filterBar.Position = UDim2.new(0, 0, 0, TITLE_H)
+filterBar.BackgroundColor3 = StudioTheme.panelAlt
+filterBar.BorderSizePixel = 1
+filterBar.BorderColor3 = StudioTheme.border
+filterBar.Parent = panel
+
+local filterBox = makeStudioTextBox(filterBar, "", 0, 20, "Filter events by Type or Asset ID (e.g. Gamepass, 12345)...", false)
+filterBox.Size = UDim2.new(1, -12, 0, 20)
+filterBox.Position = UDim2.new(0, 6, 0, 4)
+
 local listWrap = Instance.new("Frame")
+listWrap.Name = "StudioLogViewport"
 listWrap.Size = UDim2.new(1, -8, 1, -(TITLE_H + FILTER_H + FOOTER_H + 8))
 listWrap.Position = UDim2.new(0, 4, 0, TITLE_H + FILTER_H + 4)
-listWrap.BackgroundColor3 = C.panel
-listWrap.BorderSizePixel = 0
+listWrap.BackgroundColor3 = StudioTheme.insetBg
+listWrap.BorderSizePixel = 1
+listWrap.BorderColor3 = StudioTheme.border
 listWrap.ClipsDescendants = true
 listWrap.Parent = panel
-bevel(listWrap)
 
 local logArea = Instance.new("ScrollingFrame")
-logArea.Size = UDim2.new(1, -4, 1, -4)
-logArea.Position = UDim2.new(0, 2, 0, 2)
+logArea.Size = UDim2.new(1, -2, 1, -2)
+logArea.Position = UDim2.new(0, 1, 0, 1)
 logArea.BackgroundTransparency = 1
 logArea.BorderSizePixel = 0
-logArea.ScrollBarThickness = 3
-logArea.ScrollBarImageColor3 = C.borderLight
+logArea.ScrollBarThickness = 5
+logArea.ScrollBarImageColor3 = StudioTheme.borderSubtle
 logArea.CanvasSize = UDim2.new(0, 0, 0, 0)
 logArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
 logArea.ClipsDescendants = true
@@ -350,45 +371,50 @@ local layout = Instance.new("UIListLayout")
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 2)
 layout.Parent = logArea
-pad(logArea, 2, 2, 2, 2)
+
+local logPad = Instance.new("UIPadding")
+logPad.PaddingTop = UDim.new(0, 4)
+logPad.PaddingBottom = UDim.new(0, 4)
+logPad.PaddingLeft = UDim.new(0, 4)
+logPad.PaddingRight = UDim.new(0, 4)
+logPad.Parent = logArea
 
 local footer = Instance.new("Frame")
+footer.Name = "StudioFooter"
 footer.Size = UDim2.new(1, 0, 0, FOOTER_H)
 footer.Position = UDim2.new(0, 0, 1, -FOOTER_H)
-footer.BackgroundColor3 = C.top
-footer.BorderSizePixel = 0
+footer.BackgroundColor3 = StudioTheme.headerBg
+footer.BorderSizePixel = 1
+footer.BorderColor3 = StudioTheme.border
 footer.Parent = panel
-bevel(footer)
 
 local countLabel = Instance.new("TextLabel")
 countLabel.BackgroundTransparency = 1
-countLabel.Size = UDim2.new(0, 120, 1, 0)
-countLabel.Position = UDim2.new(0, 6, 0, 0)
-countLabel.Text = "0 events"
-countLabel.TextColor3 = C.textMuted
-countLabel.TextSize = 12
-countLabel.Font = Enum.Font.Arial
+countLabel.Size = UDim2.new(0, 90, 1, 0)
+countLabel.Position = UDim2.new(0, 8, 0, 0)
+countLabel.Text = "0 events logged"
+countLabel.TextColor3 = StudioTheme.textMuted
+countLabel.TextSize = 11
+countLabel.Font = Enum.Font.SourceSans
 countLabel.TextXAlignment = Enum.TextXAlignment.Left
 countLabel.Parent = footer
 
 local speedLabel = Instance.new("TextLabel")
 speedLabel.BackgroundTransparency = 1
-speedLabel.Size = UDim2.new(0, 72, 1, 0)
-speedLabel.Position = UDim2.new(0, 118, 0, 0)
-speedLabel.Text = "Speed: " .. tostring(autoSpeed)
-speedLabel.TextColor3 = C.textMuted
-speedLabel.TextSize = 12
-speedLabel.Font = Enum.Font.Arial
+speedLabel.Size = UDim2.new(0, 80, 1, 0)
+speedLabel.Position = UDim2.new(0, 104, 0, 0)
+speedLabel.Text = "Rate: " .. tostring(autoSpeed) .. "/s"
+speedLabel.TextColor3 = StudioTheme.textMuted
+speedLabel.TextSize = 11
+speedLabel.Font = Enum.Font.SourceSans
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 speedLabel.Parent = footer
 
-local stopBtn = makeButton(footer, "Stop", 42, C.panel2, C.text)
-stopBtn.Position = UDim2.new(1, -92, 0, 5)
-addDesktopHover(stopBtn, C.panel2, C.top, C.text, C.text)
+local stopBtn = makeStudioButton(footer, "Stop All", 60, 18, StudioTheme.btnBg, StudioTheme.red)
+stopBtn.Position = UDim2.new(1, -126, 0, 3)
 
-local setBtn = makeButton(footer, "Set", 32, C.panel2, C.text)
-setBtn.Position = UDim2.new(1, -46, 0, 5)
-addDesktopHover(setBtn, C.panel2, C.top, C.text, C.text)
+local setBtn = makeStudioButton(footer, "Settings", 58, 18, StudioTheme.btnBg, StudioTheme.text)
+setBtn.Position = UDim2.new(1, -62, 0, 3)
 
 local function setEmpty(show)
     local old = logArea:FindFirstChild("EmptyState")
@@ -397,10 +423,10 @@ local function setEmpty(show)
         lbl.Name = "EmptyState"
         lbl.BackgroundTransparency = 1
         lbl.Size = UDim2.new(1, -4, 0, 80)
-        lbl.Text = "Waiting for marketplace events"
-        lbl.TextColor3 = C.textDim
+        lbl.Text = "-- Ready for marketplace purchase prompts --"
+        lbl.TextColor3 = StudioTheme.textDim
         lbl.TextSize = 12
-        lbl.Font = Enum.Font.Arial
+        lbl.Font = Enum.Font.Code
         lbl.Parent = logArea
     elseif not show and old then
         old:Destroy()
@@ -429,7 +455,7 @@ local function stopAllLoops()
         if data.loop then task.cancel(data.loop) end
         if btn and btn.Parent then
             btn.Text = "Auto"
-            setButtonState(btn, C.panel2, C.text)
+            setButtonState(btn, StudioTheme.btnBg, StudioTheme.text)
         end
     end
     table.clear(activeAuto)
@@ -439,7 +465,7 @@ local function stopAllLoops()
         if data.loop then task.cancel(data.loop) end
         if btn and btn.Parent then
             btn.Text = "Run"
-            setButtonState(btn, C.panel2, C.text)
+            setButtonState(btn, StudioTheme.btnBg, StudioTheme.text)
         end
     end
     table.clear(activeSpam)
@@ -471,45 +497,45 @@ local function addLog(label, id, signalType)
         pcall(setclipboard, tostring(id))
     end
 
-    sendWebhook(label, id) -- Fire Discord Webhook async
+    sendWebhook(label, id)
 
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, -2, 0, ROW_H)
-    row.BackgroundColor3 = C.panel2
-    row.BorderSizePixel = 0
+    row.BackgroundColor3 = (eventCount % 2 == 0) and StudioTheme.panelBg or StudioTheme.windowBg
+    row.BorderSizePixel = 1
+    row.BorderColor3 = StudioTheme.border
     row.LayoutOrder = -(eventCount + 1)
     row.ClipsDescendants = true
     row.Parent = logArea
-    bevel(row)
 
     local stripe = Instance.new("Frame")
     stripe.Size = UDim2.new(0, 4, 1, 0)
-    stripe.BackgroundColor3 = SIGNAL_COLORS[signalType] or C.blue
+    stripe.BackgroundColor3 = SIGNAL_COLORS[signalType] or StudioTheme.blue
     stripe.BorderSizePixel = 0
     stripe.Parent = row
 
-    local typeLabel = Instance.new("TextLabel")
-    typeLabel.Name = "TypeLabel"
-    typeLabel.BackgroundTransparency = 1
-    typeLabel.Size = UDim2.new(0, 62, 1, 0)
-    typeLabel.Position = UDim2.new(0, 8, 0, 0)
-    typeLabel.Text = label
-    typeLabel.TextColor3 = C.textMuted
-    typeLabel.TextSize = 12
-    typeLabel.Font = Enum.Font.ArialBold
-    typeLabel.TextXAlignment = Enum.TextXAlignment.Left
-    typeLabel.Parent = row
+    local badge = Instance.new("TextLabel")
+    badge.Name = "TypeLabel"
+    badge.BackgroundTransparency = 1
+    badge.Size = UDim2.new(0, 68, 1, 0)
+    badge.Position = UDim2.new(0, 8, 0, 0)
+    badge.Text = "[" .. string.upper(label) .. "]"
+    badge.TextColor3 = SIGNAL_COLORS[signalType] or StudioTheme.blue
+    badge.TextSize = 11
+    badge.Font = Enum.Font.SourceSansBold
+    badge.TextXAlignment = Enum.TextXAlignment.Left
+    badge.Parent = row
 
-    local actionWidth = 106
+    local actionWidth = 118
     local idLabel = Instance.new("TextLabel")
     idLabel.Name = "IdLabel"
     idLabel.BackgroundTransparency = 1
-    idLabel.Size = UDim2.new(1, -(78 + actionWidth), 1, 0)
-    idLabel.Position = UDim2.new(0, 72, 0, 0)
+    idLabel.Size = UDim2.new(1, -(80 + actionWidth), 1, 0)
+    idLabel.Position = UDim2.new(0, 78, 0, 0)
     idLabel.Text = tostring(id)
-    idLabel.TextColor3 = C.text
+    idLabel.TextColor3 = StudioTheme.text
     idLabel.TextSize = 12
-    idLabel.Font = Enum.Font.ArialBold
+    idLabel.Font = Enum.Font.Code
     idLabel.TextXAlignment = Enum.TextXAlignment.Left
     idLabel.TextTruncate = Enum.TextTruncate.AtEnd
     idLabel.Parent = row
@@ -521,26 +547,23 @@ local function addLog(label, id, signalType)
     actions.ClipsDescendants = true
     actions.Parent = row
 
-    local copyBtn = makeButton(actions, "Copy", 32, C.panel, C.text)
-    copyBtn.Position = UDim2.new(0, 0, 0, 3)
-    addDesktopHover(copyBtn, C.panel, C.top, C.text, C.text)
+    local copyBtn = makeStudioButton(actions, "Copy", 36, 20, StudioTheme.btnBg, StudioTheme.text)
+    copyBtn.Position = UDim2.new(0, 0, 0, 4)
 
-    local autoBtn = makeButton(actions, "Auto", 32, C.panel, C.text)
-    autoBtn.Position = UDim2.new(0, 36, 0, 3)
-    addDesktopHover(autoBtn, C.panel, C.top, C.text, C.text)
+    local autoBtn = makeStudioButton(actions, "Auto", 36, 20, StudioTheme.btnBg, StudioTheme.text)
+    autoBtn.Position = UDim2.new(0, 40, 0, 4)
 
-    local runBtn = makeButton(actions, "Run", 32, C.panel, C.text)
-    runBtn.Position = UDim2.new(0, 72, 0, 3)
-    addDesktopHover(runBtn, C.panel, C.top, C.text, C.text)
+    local runBtn = makeStudioButton(actions, "Run", 36, 20, StudioTheme.btnBg, StudioTheme.text)
+    runBtn.Position = UDim2.new(0, 80, 0, 4)
 
     copyBtn.Activated:Connect(function()
         pcall(setclipboard, tostring(id))
         copyBtn.Text = "OK"
-        setButtonState(copyBtn, C.green, C.text)
+        setButtonState(copyBtn, StudioTheme.green, Color3.fromRGB(255, 255, 255))
         task.wait(0.6)
         if copyBtn and copyBtn.Parent then
             copyBtn.Text = "Copy"
-            setButtonState(copyBtn, C.panel, C.text)
+            setButtonState(copyBtn, StudioTheme.btnBg, StudioTheme.text)
         end
     end)
 
@@ -551,7 +574,7 @@ local function addLog(label, id, signalType)
         if autoOn then return end
         autoOn = true
         autoBtn.Text = "ON"
-        setButtonState(autoBtn, C.red, C.text)
+        setButtonState(autoBtn, StudioTheme.red, Color3.fromRGB(255, 255, 255))
         autoLoop = task.spawn(function()
             local delay = autoSpeed > 0 and (1 / autoSpeed) or 0.01
             while autoOn and autoBtn.Parent do
@@ -568,7 +591,7 @@ local function addLog(label, id, signalType)
         activeAuto[autoBtn] = nil
         if autoBtn and autoBtn.Parent then
             autoBtn.Text = "Auto"
-            setButtonState(autoBtn, C.panel, C.text)
+            setButtonState(autoBtn, StudioTheme.btnBg, StudioTheme.text)
         end
     end
 
@@ -585,7 +608,7 @@ local function addLog(label, id, signalType)
         if spamOn then return end
         spamOn = true
         runBtn.Text = "SPM"
-        setButtonState(runBtn, C.yellow, C.text)
+        setButtonState(runBtn, StudioTheme.yellow, Color3.fromRGB(255, 255, 255))
         spamLoop = task.spawn(function()
             while spamOn and runBtn.Parent do
                 fireFakeSignal(signalType, id)
@@ -601,7 +624,7 @@ local function addLog(label, id, signalType)
         activeSpam[runBtn] = nil
         if runBtn and runBtn.Parent then
             runBtn.Text = "Run"
-            setButtonState(runBtn, C.panel, C.text)
+            setButtonState(runBtn, StudioTheme.btnBg, StudioTheme.text)
         end
     end
 
@@ -627,11 +650,11 @@ local function addLog(label, id, signalType)
         elseif held < 2 then
             fireFakeSignal(signalType, id)
             runBtn.Text = "OK"
-            setButtonState(runBtn, C.green, C.text)
+            setButtonState(runBtn, StudioTheme.green, Color3.fromRGB(255, 255, 255))
             task.wait(0.5)
             if runBtn and runBtn.Parent then
                 runBtn.Text = "Run"
-                setButtonState(runBtn, C.panel, C.text)
+                setButtonState(runBtn, StudioTheme.btnBg, StudioTheme.text)
             end
         end
     end
@@ -676,7 +699,7 @@ clearBtn.Activated:Connect(function()
     end
     entries = {}
     eventCount = 0
-    countLabel.Text = "0 events"
+    countLabel.Text = "0 events logged"
     setEmpty(true)
 end)
 
@@ -689,80 +712,81 @@ local function toggleSettings()
         return
     end
 
-    -- Enlarged settings height to handle more control features comfortably (200 -> 240)
     settingsWindow = Instance.new("Frame")
-    settingsWindow.Size = UDim2.new(0, 260, 0, 240)
-    settingsWindow.Position = UDim2.new(0.5, -130, 0.5, -120)
-    settingsWindow.BackgroundColor3 = C.bg
-    settingsWindow.BorderSizePixel = 0
+    settingsWindow.Name = "StudioSettingsModal"
+    settingsWindow.Size = UDim2.new(0, 290, 0, 270)
+    settingsWindow.Position = UDim2.new(0.5, -145, 0.5, -135)
+    settingsWindow.BackgroundColor3 = StudioTheme.windowBg
+    settingsWindow.BorderSizePixel = 1
+    settingsWindow.BorderColor3 = StudioTheme.border
     settingsWindow.ZIndex = 200
-    settingsWindow.Parent = screenGui
     settingsWindow.ClipsDescendants = true
-    bevel(settingsWindow)
+    settingsWindow.Parent = screenGui
 
     local top = Instance.new("Frame")
     top.Size = UDim2.new(1, 0, 0, 24)
-    top.BackgroundColor3 = C.top
-    top.BorderSizePixel = 0
+    top.BackgroundColor3 = StudioTheme.headerBg
+    top.BorderSizePixel = 1
+    top.BorderColor3 = StudioTheme.border
     top.ZIndex = 201
     top.Parent = settingsWindow
-    bevel(top)
 
     local ttl = Instance.new("TextLabel")
     ttl.BackgroundTransparency = 1
-    ttl.Size = UDim2.new(1, -24, 1, 0)
+    ttl.Size = UDim2.new(1, -28, 1, 0)
     ttl.Position = UDim2.new(0, 6, 0, 0)
-    ttl.Text = "Settings & Hook Setup"
-    ttl.TextColor3 = C.text
+    ttl.Text = "Settings & Interceptor Preferences"
+    ttl.TextColor3 = StudioTheme.text
     ttl.TextSize = 12
-    ttl.Font = Enum.Font.ArialBold
+    ttl.Font = Enum.Font.SourceSansSemibold
     ttl.TextXAlignment = Enum.TextXAlignment.Left
     ttl.ZIndex = 202
     ttl.Parent = top
 
-    local x = makeButton(top, "X", 18, C.red, C.text)
-    x.Position = UDim2.new(1, -20, 0, 3)
+    local x = Instance.new("TextButton")
+    x.Size = UDim2.new(0, 24, 1, 0)
+    x.Position = UDim2.new(1, -24, 0, 0)
+    x.BackgroundColor3 = StudioTheme.headerBg
+    x.BorderSizePixel = 0
+    x.Text = "X"
+    x.TextColor3 = StudioTheme.textMuted
+    x.Font = Enum.Font.SourceSansBold
+    x.TextSize = 11
     x.ZIndex = 202
+    x.Parent = top
+
+    x.MouseEnter:Connect(function() x.BackgroundColor3 = StudioTheme.red; x.TextColor3 = Color3.fromRGB(255, 255, 255) end)
+    x.MouseLeave:Connect(function() x.BackgroundColor3 = StudioTheme.headerBg; x.TextColor3 = StudioTheme.textMuted end)
     x.Activated:Connect(function()
         if settingsWindow then settingsWindow:Destroy(); settingsWindow = nil end
     end)
 
-    -- Row 1: Spam speed configuration & Clip
     local speedLbl = Instance.new("TextLabel")
     speedLbl.BackgroundTransparency = 1
-    speedLbl.Size = UDim2.new(0, 60, 0, 20)
+    speedLbl.Size = UDim2.new(0, 68, 0, 20)
     speedLbl.Position = UDim2.new(0, 8, 0, 32)
-    speedLbl.Text = "Spam Speed:"
-    speedLbl.TextColor3 = C.text
+    speedLbl.Text = "Spam Rate:"
+    speedLbl.TextColor3 = StudioTheme.textMuted
     speedLbl.TextSize = 11
-    speedLbl.Font = Enum.Font.Arial
+    speedLbl.Font = Enum.Font.SourceSansSemibold
     speedLbl.TextXAlignment = Enum.TextXAlignment.Left
     speedLbl.ZIndex = 201
     speedLbl.Parent = settingsWindow
 
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 50, 0, 20)
-    box.Position = UDim2.new(0, 74, 0, 32)
-    box.BackgroundColor3 = C.panel
-    box.Text = tostring(autoSpeed)
-    box.TextColor3 = C.text
-    box.TextSize = 12
-    box.Font = Enum.Font.ArialBold
-    box.BorderSizePixel = 0
+    local box = makeStudioTextBox(settingsWindow, tostring(autoSpeed), 48, 20, "100", true)
+    box.Position = UDim2.new(0, 78, 0, 32)
     box.ZIndex = 201
-    box.Parent = settingsWindow
-    bevel(box)
 
-    local save = makeButton(settingsWindow, "Save", 38, C.panel2, C.text)
-    save.Position = UDim2.new(0, 128, 0, 32)
+    local save = makeStudioButton(settingsWindow, "Save", 36, 20, StudioTheme.btnBg, StudioTheme.text)
+    save.Position = UDim2.new(0, 130, 0, 32)
     save.ZIndex = 201
 
-    local autoClipBtn = makeButton(settingsWindow, autoClipEnabled and "Clip: ON" or "Clip: OFF", 42, autoClipEnabled and C.green or C.panel2, C.text)
+    local autoClipBtn = makeStudioButton(settingsWindow, autoClipEnabled and "Clip: ON" or "Clip: OFF", 54, 20, autoClipEnabled and StudioTheme.green or StudioTheme.btnBg, StudioTheme.text)
     autoClipBtn.Position = UDim2.new(0, 170, 0, 32)
     autoClipBtn.ZIndex = 201
 
-    local antiBtn = makeButton(settingsWindow, antiPrompt and "Block: ON" or "Block: OFF", 40, antiPrompt and C.red or C.panel2, C.text)
-    antiBtn.Position = UDim2.new(0, 216, 0, 32)
+    local antiBtn = makeStudioButton(settingsWindow, antiPrompt and "Block: ON" or "Block: OFF", 56, 20, antiPrompt and StudioTheme.red or StudioTheme.btnBg, StudioTheme.text)
+    antiBtn.Position = UDim2.new(0, 228, 0, 32)
     antiBtn.ZIndex = 201
 
     save.Activated:Connect(function()
@@ -771,15 +795,15 @@ local function toggleSettings()
             n = math.floor(n)
             if n >= 1 and n <= 10000 then
                 autoSpeed = n
-                speedLabel.Text = "Speed: " .. tostring(autoSpeed)
-                box.BackgroundColor3 = C.green
+                speedLabel.Text = "Rate: " .. tostring(autoSpeed) .. "/s"
+                box.BackgroundColor3 = StudioTheme.green
                 saveConfig()
                 task.wait(0.3)
-                if box and box.Parent then box.BackgroundColor3 = C.panel end
+                if box and box.Parent then box.BackgroundColor3 = StudioTheme.insetBg end
             else
-                box.BackgroundColor3 = C.red
+                box.BackgroundColor3 = StudioTheme.red
                 task.wait(0.3)
-                if box and box.Parent then box.BackgroundColor3 = C.panel end
+                if box and box.Parent then box.BackgroundColor3 = StudioTheme.insetBg end
             end
         end
     end)
@@ -787,94 +811,78 @@ local function toggleSettings()
     autoClipBtn.Activated:Connect(function()
         autoClipEnabled = not autoClipEnabled
         autoClipBtn.Text = autoClipEnabled and "Clip: ON" or "Clip: OFF"
-        setButtonState(autoClipBtn, autoClipEnabled and C.green or C.panel2, C.text)
+        setButtonState(autoClipBtn, autoClipEnabled and StudioTheme.green or StudioTheme.btnBg, StudioTheme.text)
         saveConfig()
     end)
 
     antiBtn.Activated:Connect(function()
         antiPrompt = not antiPrompt
         antiBtn.Text = antiPrompt and "Block: ON" or "Block: OFF"
-        setButtonState(antiBtn, antiPrompt and C.red or C.panel2, C.text)
+        setButtonState(antiBtn, antiPrompt and StudioTheme.red or StudioTheme.btnBg, StudioTheme.text)
         saveConfig()
     end)
 
-    -- Row 2: Discord Webhook configuration
     local webLbl = Instance.new("TextLabel")
     webLbl.BackgroundTransparency = 1
-    webLbl.Size = UDim2.new(0, 80, 0, 20)
-    webLbl.Position = UDim2.new(0, 8, 0, 56)
+    webLbl.Size = UDim2.new(0, 76, 0, 20)
+    webLbl.Position = UDim2.new(0, 8, 0, 58)
     webLbl.Text = "Webhook URL:"
-    webLbl.TextColor3 = C.text
+    webLbl.TextColor3 = StudioTheme.textMuted
     webLbl.TextSize = 11
-    webLbl.Font = Enum.Font.Arial
+    webLbl.Font = Enum.Font.SourceSansSemibold
     webLbl.TextXAlignment = Enum.TextXAlignment.Left
     webLbl.ZIndex = 201
     webLbl.Parent = settingsWindow
 
-    local webBox = Instance.new("TextBox")
-    webBox.Size = UDim2.new(1, -114, 0, 20)
-    webBox.Position = UDim2.new(0, 84, 0, 56)
-    webBox.BackgroundColor3 = C.panel
-    webBox.PlaceholderText = "Paste Discord webhook link..."
-    webBox.PlaceholderColor3 = C.textDim
-    webBox.Text = webhookUrl
-    webBox.TextColor3 = C.text
-    webBox.TextSize = 10
-    webBox.Font = Enum.Font.Arial
-    webBox.BorderSizePixel = 0
+    local webBox = makeStudioTextBox(settingsWindow, webhookUrl, 0, 20, "Discord webhook URL...", false)
+    webBox.Size = UDim2.new(1, -134, 0, 20)
+    webBox.Position = UDim2.new(0, 84, 0, 58)
     webBox.ZIndex = 201
-    webBox.Parent = settingsWindow
-    bevel(webBox)
-    pad(webBox, 4, 4, 0, 0)
 
-    local saveWebBtn = makeButton(settingsWindow, "Apply", 38, C.panel2, C.text)
-    saveWebBtn.Position = UDim2.new(1, -44, 0, 56)
+    local saveWebBtn = makeStudioButton(settingsWindow, "Apply", 40, 20, StudioTheme.btnBg, StudioTheme.text)
+    saveWebBtn.Position = UDim2.new(1, -46, 0, 58)
     saveWebBtn.ZIndex = 201
 
     saveWebBtn.Activated:Connect(function()
         webhookUrl = webBox.Text
         saveConfig()
         saveWebBtn.Text = "OK"
-        setButtonState(saveWebBtn, C.green, C.text)
+        setButtonState(saveWebBtn, StudioTheme.green, Color3.fromRGB(255, 255, 255))
         task.wait(0.5)
         if saveWebBtn and saveWebBtn.Parent then
             saveWebBtn.Text = "Apply"
-            setButtonState(saveWebBtn, C.panel2, C.text)
+            setButtonState(saveWebBtn, StudioTheme.btnBg, StudioTheme.text)
         end
     end)
 
-    -- Row 3: Manual creation / Blacklist control
+    local sectionBar = Instance.new("Frame")
+    sectionBar.Size = UDim2.new(1, -16, 0, 18)
+    sectionBar.Position = UDim2.new(0, 8, 0, 86)
+    sectionBar.BackgroundColor3 = StudioTheme.categoryBg
+    sectionBar.BorderSizePixel = 1
+    sectionBar.BorderColor3 = StudioTheme.border
+    sectionBar.ZIndex = 201
+    sectionBar.Parent = settingsWindow
+
     local manualTitle = Instance.new("TextLabel")
     manualTitle.BackgroundTransparency = 1
-    manualTitle.Size = UDim2.new(1, -16, 0, 16)
-    manualTitle.Position = UDim2.new(0, 8, 0, 84)
-    manualTitle.Text = "Manual Entry Creator & Blacklist"
-    manualTitle.TextColor3 = C.textMuted
+    manualTitle.Size = UDim2.new(1, -8, 1, 0)
+    manualTitle.Position = UDim2.new(0, 4, 0, 0)
+    manualTitle.Text = "v Manual Entry & Blacklist"
+    manualTitle.TextColor3 = StudioTheme.text
     manualTitle.TextSize = 11
-    manualTitle.Font = Enum.Font.ArialBold
+    manualTitle.Font = Enum.Font.SourceSansBold
     manualTitle.TextXAlignment = Enum.TextXAlignment.Left
-    manualTitle.ZIndex = 201
-    manualTitle.Parent = settingsWindow
+    manualTitle.ZIndex = 202
+    manualTitle.Parent = sectionBar
 
-    local targetIdBox = Instance.new("TextBox")
-    targetIdBox.Size = UDim2.new(0, 140, 0, 20)
-    targetIdBox.Position = UDim2.new(0, 8, 0, 104)
-    targetIdBox.BackgroundColor3 = C.panel
-    targetIdBox.PlaceholderText = "ID (e.g. 1234567)"
-    targetIdBox.PlaceholderColor3 = C.textDim
-    targetIdBox.Text = ""
-    targetIdBox.TextColor3 = C.text
-    targetIdBox.TextSize = 11
-    targetIdBox.Font = Enum.Font.Arial
-    targetIdBox.BorderSizePixel = 0
+    local targetIdBox = makeStudioTextBox(settingsWindow, "", 130, 20, "Target ID (e.g. 12345)", true)
+    targetIdBox.Position = UDim2.new(0, 8, 0, 110)
     targetIdBox.ZIndex = 201
-    targetIdBox.Parent = settingsWindow
-    bevel(targetIdBox)
-    pad(targetIdBox, 4, 4, 0, 0)
 
     local typeToggle = "Product"
-    local typeToggleBtn = makeButton(settingsWindow, "Type: Product", 100, C.panel2, C.text)
-    typeToggleBtn.Position = UDim2.new(0, 152, 0, 104)
+    local typeToggleBtn = makeStudioButton(settingsWindow, "Type: Product", 136, 20, StudioTheme.btnBg, StudioTheme.text)
+    typeToggleBtn.Position = UDim2.new(0, 144, 0, 110)
     typeToggleBtn.ZIndex = 201
     
     typeToggleBtn.Activated:Connect(function()
@@ -888,14 +896,15 @@ local function toggleSettings()
             typeToggle = "Product"
         end
         typeToggleBtn.Text = "Type: " .. typeToggle
+        typeToggleBtn.TextColor3 = SIGNAL_COLORS[typeToggle] or StudioTheme.text
     end)
 
-    local createBtn = makeButton(settingsWindow, "Add to Log Area", 112, C.green, C.text)
-    createBtn.Position = UDim2.new(0, 8, 0, 130)
+    local createBtn = makeStudioButton(settingsWindow, "+ Add to Log", 130, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
+    createBtn.Position = UDim2.new(0, 8, 0, 136)
     createBtn.ZIndex = 201
 
-    local blacklistBtn = makeButton(settingsWindow, "Block / Unblock ID", 128, C.red, C.text)
-    blacklistBtn.Position = UDim2.new(0, 124, 0, 130)
+    local blacklistBtn = makeStudioButton(settingsWindow, "Block / Unblock", 136, 22, StudioTheme.btnBg, StudioTheme.red)
+    blacklistBtn.Position = UDim2.new(0, 144, 0, 136)
     blacklistBtn.ZIndex = 201
 
     createBtn.Activated:Connect(function()
@@ -904,11 +913,11 @@ local function toggleSettings()
             addLog(typeToggle, idVal, typeToggle)
             createBtn.Text = "Added!"
             task.wait(0.5)
-            if createBtn and createBtn.Parent then createBtn.Text = "Add to Log Area" end
+            if createBtn and createBtn.Parent then createBtn.Text = "+ Add to Log" end
         else
-            targetIdBox.BackgroundColor3 = C.red
+            targetIdBox.BackgroundColor3 = StudioTheme.red
             task.wait(0.3)
-            if targetIdBox and targetIdBox.Parent then targetIdBox.BackgroundColor3 = C.panel end
+            if targetIdBox and targetIdBox.Parent then targetIdBox.BackgroundColor3 = StudioTheme.insetBg end
         end
     end)
 
@@ -930,24 +939,24 @@ local function toggleSettings()
             end
             saveConfig()
             task.wait(0.5)
-            if blacklistBtn and blacklistBtn.Parent then blacklistBtn.Text = "Block / Unblock ID" end
+            if blacklistBtn and blacklistBtn.Parent then blacklistBtn.Text = "Block / Unblock" end
         else
-            targetIdBox.BackgroundColor3 = C.red
+            targetIdBox.BackgroundColor3 = StudioTheme.red
             task.wait(0.3)
-            if targetIdBox and targetIdBox.Parent then targetIdBox.BackgroundColor3 = C.panel end
+            if targetIdBox and targetIdBox.Parent then targetIdBox.BackgroundColor3 = StudioTheme.insetBg end
         end
     end)
 
-    -- Read-only information hints at bottom of settings window
     local infoLbl = Instance.new("TextLabel")
     infoLbl.BackgroundTransparency = 1
-    infoLbl.Size = UDim2.new(1, -16, 0, 60)
-    infoLbl.Position = UDim2.new(0, 8, 0, 164)
-    infoLbl.Text = "- Save configurations automatically.\n- Block: ON intercepts outbound prompts so the native UI doesn't display.\n- Discord webhook tracks intercepted events remotely."
-    infoLbl.TextColor3 = C.textDim
+    infoLbl.Size = UDim2.new(1, -16, 0, 80)
+    infoLbl.Position = UDim2.new(0, 8, 0, 168)
+    infoLbl.Text = "- Block: ON intercepts outgoing prompts to suppress screen overlays.\n- Auto-clip copies detected IDs directly to clipboard.\n- Webhooks post intercepted marketplace events to Discord."
+    infoLbl.TextColor3 = StudioTheme.textDim
     infoLbl.TextSize = 10
-    infoLbl.Font = Enum.Font.Arial
+    infoLbl.Font = Enum.Font.SourceSans
     infoLbl.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl.TextWrapped = true
     infoLbl.ZIndex = 201
     infoLbl.Parent = settingsWindow
 end
@@ -966,7 +975,8 @@ local function hideGui()
 
     if isMobile then
         if not reopenButton or not reopenButton.Parent then
-            reopenButton = makeButton(playerGui, "P", 28, C.top, C.text)
+            reopenButton = makeStudioButton(targetGuiParent, "P", 28, 28, StudioTheme.headerBg, StudioTheme.text)
+            reopenButton.Name = "PassReopenBtn"
             reopenButton.Size = UDim2.new(0, 28, 0, 28)
             reopenButton.Position = UDim2.new(1, -34, 1, -34)
             reopenButton.AnchorPoint = Vector2.new(1, 1)
@@ -1006,15 +1016,14 @@ end
 closeBtn.Activated:Connect(hideGui)
 
 if not isMobile then
-    UserInputService.InputBegan:Connect(function(input)
+    local keyConn = UserInputService.InputBegan:Connect(function(input)
         if input.KeyCode == Enum.KeyCode.RightShift then
             if uiVisible then hideGui() else showGui() end
         end
     end)
+    table.insert(activeConnections, keyConn)
 end
 
--- FEATURE: Metamethod Hooking for Outgoing Prompts (Anti-Prompt / Silent Capture)
--- This blocks actual prompt screens while silently extracting the asset ID to the log area.
 local hookSuccess, hookErr = pcall(function()
     if hookmetamethod then
         local oldNamecall
@@ -1024,7 +1033,7 @@ local hookSuccess, hookErr = pcall(function()
             if self == MarketplaceService then
                 if method == "PromptPurchase" and typeof(args[2]) == "number" then
                     task.spawn(addLog, "Purchase", args[2], "Purchase")
-                    if antiPrompt then return end -- Silently capture and block output UI
+                    if antiPrompt then return end
                 elseif method == "PromptGamePassPurchase" and typeof(args[2]) == "number" then
                     task.spawn(addLog, "Gamepass", args[2], "Gamepass")
                     if antiPrompt then return end
@@ -1038,18 +1047,36 @@ local hookSuccess, hookErr = pcall(function()
     end
 end)
 
--- Native fallback listeners if hooking isn't supported or active
-MarketplaceService.PromptProductPurchaseFinished:Connect(function(_, id)
+local c1 = MarketplaceService.PromptProductPurchaseFinished:Connect(function(_, id)
     if suppressCounter == 0 then addLog("Product", id, "Product") end
 end)
-MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_, id)
+local c2 = MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_, id)
     if suppressCounter == 0 then addLog("Gamepass", id, "Gamepass") end
 end)
-MarketplaceService.PromptBulkPurchaseFinished:Connect(function(_, id)
+local c3 = MarketplaceService.PromptBulkPurchaseFinished:Connect(function(_, id)
     if suppressCounter == 0 then addLog("Bulk", id, "Bulk") end
 end)
-MarketplaceService.PromptPurchaseFinished:Connect(function(_, id)
+local c4 = MarketplaceService.PromptPurchaseFinished:Connect(function(_, id)
     if suppressCounter == 0 then addLog("Purchase", id, "Purchase") end
 end)
+table.insert(activeConnections, c1)
+table.insert(activeConnections, c2)
+table.insert(activeConnections, c3)
+table.insert(activeConnections, c4)
 
 setEmpty(true)
+
+env._PassBypassCleanup = function()
+    stopAllLoops()
+    for _, conn in ipairs(activeConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    table.clear(activeConnections)
+    cleanAllPreviousInstances({
+        uiName,
+        "PassUI",
+        "StudioPassMonitor",
+        "PassReopenBtn",
+        "StudioSettingsModal"
+    })
+end
