@@ -98,29 +98,104 @@ local activeAuto = {}
 local activeSpam = {}
 local activeConnections = {}
 
-local StudioTheme = {
-    windowBg       = Color3.fromRGB(37, 37, 38),
-    headerBg       = Color3.fromRGB(45, 45, 48),
-    panelBg        = Color3.fromRGB(42, 42, 45),
-    panelAlt       = Color3.fromRGB(32, 32, 34),
-    insetBg        = Color3.fromRGB(26, 26, 28),
-    categoryBg     = Color3.fromRGB(50, 50, 54),
-    border         = Color3.fromRGB(20, 20, 22),
-    borderSubtle   = Color3.fromRGB(55, 55, 58),
-    text           = Color3.fromRGB(225, 225, 228),
-    textMuted      = Color3.fromRGB(160, 160, 165),
-    textDim        = Color3.fromRGB(115, 115, 120),
-    blue           = Color3.fromRGB(0, 122, 204),
-    blueHover      = Color3.fromRGB(28, 140, 224), 
-    green          = Color3.fromRGB(76, 175, 80),
-    greenHover     = Color3.fromRGB(92, 195, 96),  
-    red            = Color3.fromRGB(215, 60, 60),
-    redHover       = Color3.fromRGB(235, 75, 75),   
-    yellow         = Color3.fromRGB(220, 170, 50),
-    purple         = Color3.fromRGB(160, 120, 220),
-    btnBg          = Color3.fromRGB(50, 50, 54),
-    btnHover       = Color3.fromRGB(65, 65, 70),
-}
+local VH = _G.VoidHub
+local isClassic = false
+local isWasorModern = false
+
+if VH and VH.UI then
+    if (VH.UI.themeColors and VH.UI.themeColors["Studio Classic"]) or (_G.WASOR_ScreenGui and _G.WASOR_ScreenGui:FindFirstChild("StudioTopRibbon")) then
+        isClassic = true
+    else
+        isWasorModern = true
+    end
+end
+
+local StudioTheme
+if isWasorModern then
+    local curAccent = (VH.State and VH.State.currentThemeColor) or (VH.UI and VH.UI.themeColors and VH.UI.themeColors["Red"]) or Color3.fromRGB(218, 38, 38)
+    StudioTheme = {
+        isModern       = true,
+        font           = Enum.Font.Gotham,
+        fontBold       = Enum.Font.GothamBold,
+        fontSemibold   = Enum.Font.GothamMedium,
+        cornerRadius   = 6,
+        borderSize     = 0,
+        
+        windowBg       = Color3.fromRGB(18, 18, 22),
+        headerBg       = Color3.fromRGB(24, 24, 28),
+        panelBg        = Color3.fromRGB(22, 22, 26),
+        panelAlt       = Color3.fromRGB(16, 16, 18),
+        insetBg        = Color3.fromRGB(14, 14, 16),
+        categoryBg     = Color3.fromRGB(30, 30, 35),
+        cardBg         = Color3.fromRGB(26, 26, 30),
+        cardHover      = Color3.fromRGB(36, 36, 42),
+        border         = Color3.fromRGB(38, 38, 44),
+        borderSubtle   = Color3.fromRGB(48, 48, 54),
+        text           = Color3.fromRGB(240, 240, 245),
+        textMuted      = Color3.fromRGB(160, 160, 170),
+        textDim        = Color3.fromRGB(115, 115, 125),
+        
+        blue           = curAccent,
+        blueHover      = Color3.fromRGB(math.clamp(math.floor(curAccent.R * 255 + 25), 0, 255), math.clamp(math.floor(curAccent.G * 255 + 25), 0, 255), math.clamp(math.floor(curAccent.B * 255 + 25), 0, 255)),
+        green          = Color3.fromRGB(46, 204, 113),
+        greenHover     = Color3.fromRGB(56, 218, 125),
+        red            = Color3.fromRGB(218, 38, 38),
+        redHover       = Color3.fromRGB(238, 58, 58),
+        yellow         = Color3.fromRGB(241, 196, 15),
+        purple         = Color3.fromRGB(141, 47, 196),
+        btnBg          = Color3.fromRGB(32, 32, 36),
+        btnHover       = Color3.fromRGB(44, 44, 50),
+        btnPressed     = curAccent,
+        tabActive      = Color3.fromRGB(26, 26, 30),
+        tabInactive    = Color3.fromRGB(18, 18, 20),
+        Product        = curAccent,
+        Gamepass       = Color3.fromRGB(141, 47, 196),
+        Bulk           = Color3.fromRGB(241, 196, 15),
+    }
+else
+    StudioTheme = {
+        isModern       = false,
+        font           = ThemeFont,
+        fontBold       = ThemeFontBold,
+        fontSemibold   = ThemeFontSemibold,
+        cornerRadius   = 0,
+        borderSize     = 1,
+        
+        windowBg       = Color3.fromRGB(37, 37, 38),
+        headerBg       = Color3.fromRGB(45, 45, 48),
+        panelBg        = Color3.fromRGB(42, 42, 45),
+        panelAlt       = Color3.fromRGB(32, 32, 34),
+        insetBg        = Color3.fromRGB(26, 26, 28),
+        categoryBg     = Color3.fromRGB(50, 50, 54),
+        cardBg         = Color3.fromRGB(44, 44, 48),
+        cardHover      = Color3.fromRGB(56, 56, 62),
+        border         = Color3.fromRGB(20, 20, 22),
+        borderSubtle   = Color3.fromRGB(55, 55, 58),
+        text           = Color3.fromRGB(225, 225, 228),
+        textMuted      = Color3.fromRGB(160, 160, 165),
+        textDim        = Color3.fromRGB(115, 115, 120),
+        blue           = Color3.fromRGB(0, 122, 204),
+        blueHover      = Color3.fromRGB(28, 140, 224), 
+        green          = Color3.fromRGB(76, 175, 80),
+        greenHover     = Color3.fromRGB(92, 195, 96),  
+        red            = Color3.fromRGB(215, 60, 60),
+        redHover       = Color3.fromRGB(235, 75, 75),   
+        yellow         = Color3.fromRGB(230, 180, 50),
+        purple         = Color3.fromRGB(160, 120, 220),
+        btnBg          = Color3.fromRGB(50, 50, 54),
+        btnHover       = Color3.fromRGB(65, 65, 70),
+        btnPressed     = Color3.fromRGB(0, 122, 204),
+        tabActive      = Color3.fromRGB(40, 40, 42),
+        tabInactive    = Color3.fromRGB(30, 30, 32),
+        Product        = Color3.fromRGB(0, 122, 204),
+        Gamepass       = Color3.fromRGB(160, 120, 220),
+        Bulk           = Color3.fromRGB(230, 180, 50),
+    }
+end
+local ThemeFont = StudioTheme.font
+local ThemeFontSemibold = StudioTheme.fontSemibold
+local ThemeFontBold = StudioTheme.fontBold
+
 
 local SIGNAL_COLORS = {
     Product = StudioTheme.blue,
@@ -215,7 +290,7 @@ local function makeStudioButton(parent, text, w, h, bg, fg)
     b.Text = text
     b.TextColor3 = fg or StudioTheme.text
     b.TextSize = 12
-    b.Font = Enum.Font.SourceSansSemibold
+    b.Font = ThemeFontSemibold
     b.AutoButtonColor = false
     b.BorderSizePixel = 1
     b.BorderColor3 = StudioTheme.border
@@ -241,7 +316,7 @@ local function makeStudioTextBox(parent, text, width, height, placeholder, fontC
     box.PlaceholderColor3 = StudioTheme.textDim
     box.TextColor3 = StudioTheme.text
     box.TextSize = 12
-    box.Font = fontCode and Enum.Font.Code or Enum.Font.SourceSans
+    box.Font = fontCode and Enum.Font.Code or ThemeFont
     box.ClearTextOnFocus = false
     box.BorderSizePixel = 1
     box.BorderColor3 = StudioTheme.border
@@ -254,8 +329,16 @@ panel.Name = "StudioPassMonitor"
 panel.Size = isMobile and UDim2.new(0, 360, 0, 260) or UDim2.new(0, 520, 0, 310)
 panel.Position = UDim2.new(0.5, isMobile and -180 or -260, 0.5, isMobile and -130 or -155)
 panel.BackgroundColor3 = StudioTheme.windowBg
-panel.BorderSizePixel = 1
-panel.BorderColor3 = StudioTheme.border
+if StudioTheme.isModern then
+    panel.BorderSizePixel = 0
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
+    local s = Instance.new("UIStroke", panel)
+    s.Color = StudioTheme.border
+    s.Thickness = 1
+else
+    panel.BorderSizePixel = 1
+    panel.BorderColor3 = StudioTheme.border
+end
 panel.ClipsDescendants = true
 panel.Active = true
 panel.Selectable = true
@@ -281,7 +364,7 @@ title.Position = UDim2.new(0, 8, 0, 0)
 title.Text = "Main - Marketplace Interceptor (" .. passName .. ")"
 title.TextColor3 = StudioTheme.text
 title.TextSize = 13
-title.Font = Enum.Font.SourceSansSemibold
+title.Font = ThemeFontSemibold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = titleBar
 
@@ -295,7 +378,7 @@ closeBtn.BackgroundColor3 = StudioTheme.headerBg
 closeBtn.BorderSizePixel = 0
 closeBtn.Text = "X"
 closeBtn.TextColor3 = StudioTheme.textMuted
-closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.Font = ThemeFontBold
 closeBtn.TextSize = 12
 closeBtn.Parent = titleBar
 
@@ -395,7 +478,7 @@ countLabel.Position = UDim2.new(0, 8, 0, 0)
 countLabel.Text = "0 events logged"
 countLabel.TextColor3 = StudioTheme.textMuted
 countLabel.TextSize = 11
-countLabel.Font = Enum.Font.SourceSans
+countLabel.Font = ThemeFont
 countLabel.TextXAlignment = Enum.TextXAlignment.Left
 countLabel.Parent = footer
 
@@ -406,7 +489,7 @@ speedLabel.Position = UDim2.new(0, 104, 0, 0)
 speedLabel.Text = "Rate: " .. tostring(autoSpeed) .. "/s"
 speedLabel.TextColor3 = StudioTheme.textMuted
 speedLabel.TextSize = 11
-speedLabel.Font = Enum.Font.SourceSans
+speedLabel.Font = ThemeFont
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 speedLabel.Parent = footer
 
@@ -434,7 +517,7 @@ local function setEmpty(show)
 end
 
 local function fireFakeSignal(signalType, id)
-    suppressCounter += 1
+    suppressCounter = suppressCounter + 1
     pcall(function()
         if signalType == "Product" then
             MarketplaceService:SignalPromptProductPurchaseFinished(player.UserId, id, true)
@@ -446,7 +529,7 @@ local function fireFakeSignal(signalType, id)
             MarketplaceService:SignalPromptPurchaseFinished(player.UserId, id, true)
         end
     end)
-    suppressCounter -= 1
+    suppressCounter = suppressCounter - 1
 end
 
 local function stopAllLoops()
@@ -522,7 +605,7 @@ local function addLog(label, id, signalType)
     badge.Text = "[" .. string.upper(label) .. "]"
     badge.TextColor3 = SIGNAL_COLORS[signalType] or StudioTheme.blue
     badge.TextSize = 11
-    badge.Font = Enum.Font.SourceSansBold
+    badge.Font = ThemeFontBold
     badge.TextXAlignment = Enum.TextXAlignment.Left
     badge.Parent = row
 
@@ -684,7 +767,7 @@ local function addLog(label, id, signalType)
         end
     end)
 
-    eventCount += 1
+    eventCount = eventCount + 1
     countLabel.Text = tostring(eventCount) .. " events"
     table.insert(entries, row)
     updateFilter() 
@@ -738,7 +821,7 @@ local function toggleSettings()
     ttl.Text = "Settings & Interceptor Preferences"
     ttl.TextColor3 = StudioTheme.text
     ttl.TextSize = 12
-    ttl.Font = Enum.Font.SourceSansSemibold
+    ttl.Font = ThemeFontSemibold
     ttl.TextXAlignment = Enum.TextXAlignment.Left
     ttl.ZIndex = 202
     ttl.Parent = top
@@ -750,7 +833,7 @@ local function toggleSettings()
     x.BorderSizePixel = 0
     x.Text = "X"
     x.TextColor3 = StudioTheme.textMuted
-    x.Font = Enum.Font.SourceSansBold
+    x.Font = ThemeFontBold
     x.TextSize = 11
     x.ZIndex = 202
     x.Parent = top
@@ -768,7 +851,7 @@ local function toggleSettings()
     speedLbl.Text = "Spam Rate:"
     speedLbl.TextColor3 = StudioTheme.textMuted
     speedLbl.TextSize = 11
-    speedLbl.Font = Enum.Font.SourceSansSemibold
+    speedLbl.Font = ThemeFontSemibold
     speedLbl.TextXAlignment = Enum.TextXAlignment.Left
     speedLbl.ZIndex = 201
     speedLbl.Parent = settingsWindow
@@ -829,7 +912,7 @@ local function toggleSettings()
     webLbl.Text = "Webhook URL:"
     webLbl.TextColor3 = StudioTheme.textMuted
     webLbl.TextSize = 11
-    webLbl.Font = Enum.Font.SourceSansSemibold
+    webLbl.Font = ThemeFontSemibold
     webLbl.TextXAlignment = Enum.TextXAlignment.Left
     webLbl.ZIndex = 201
     webLbl.Parent = settingsWindow
@@ -871,7 +954,7 @@ local function toggleSettings()
     manualTitle.Text = "v Manual Entry & Blacklist"
     manualTitle.TextColor3 = StudioTheme.text
     manualTitle.TextSize = 11
-    manualTitle.Font = Enum.Font.SourceSansBold
+    manualTitle.Font = ThemeFontBold
     manualTitle.TextXAlignment = Enum.TextXAlignment.Left
     manualTitle.ZIndex = 202
     manualTitle.Parent = sectionBar
@@ -954,7 +1037,7 @@ local function toggleSettings()
     infoLbl.Text = "- Block: ON intercepts outgoing prompts to suppress screen overlays.\n- Auto-clip copies detected IDs directly to clipboard.\n- Webhooks post intercepted marketplace events to Discord."
     infoLbl.TextColor3 = StudioTheme.textDim
     infoLbl.TextSize = 10
-    infoLbl.Font = Enum.Font.SourceSans
+    infoLbl.Font = ThemeFont
     infoLbl.TextXAlignment = Enum.TextXAlignment.Left
     infoLbl.TextWrapped = true
     infoLbl.ZIndex = 201
