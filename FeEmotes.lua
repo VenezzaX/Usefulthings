@@ -169,12 +169,46 @@ local forceEmote = false
 local activeEmoteName = "None"
 local activeConnections = {}
 
+local function safeGetClipboard()
+	local clip = nil
+	pcall(function()
+		if getclipboard then
+			clip = getclipboard()
+		elseif get_clipboard then
+			clip = get_clipboard()
+		elseif syn and syn.get_clipboard then
+			clip = syn.get_clipboard()
+		end
+	end)
+	return (type(clip) == "string" and clip ~= "") and clip or nil
+end
+
+local function extractId(input)
+	if not input then return nil end
+	local str = tostring(input)
+	local idStr = str:match("(%d+)")
+	return tonumber(idStr)
+end
+
+local function normalizeFavEmotes(rawList)
+	local normalized = {}
+	if type(rawList) ~= "table" then return normalized end
+	for _, item in ipairs(rawList) do
+		if type(item) == "number" then
+			table.insert(normalized, { id = item, name = "Saved Emote" })
+		elseif type(item) == "table" and item.id then
+			table.insert(normalized, { id = tonumber(item.id), name = tostring(item.name or "Saved Emote") })
+		end
+	end
+	return normalized
+end
+
 if isfile and isfile("FavoritedEmotes.txt") then
 	local succ, res = pcall(function()
 		return HttpService:JSONDecode(readfile("FavoritedEmotes.txt"))
 	end)
 	if succ and type(res) == "table" then
-		FavoritedEmotes = res
+		FavoritedEmotes = normalizeFavEmotes(res)
 	end
 end
 
@@ -182,6 +216,34 @@ local function SaveFavorites()
 	if writefile then
 		pcall(writefile, "FavoritedEmotes.txt", HttpService:JSONEncode(FavoritedEmotes))
 	end
+end
+
+local function isEmoteFav(id)
+	id = tonumber(id)
+	if not id then return false end
+	for _, fav in ipairs(FavoritedEmotes) do
+		if fav.id == id then return true end
+	end
+	return false
+end
+
+local function toggleFav(id, name)
+	id = tonumber(id)
+	if not id then return end
+	local foundIdx = nil
+	for idx, fav in ipairs(FavoritedEmotes) do
+		if fav.id == id then
+			foundIdx = idx
+			break
+		end
+	end
+	if foundIdx then
+		table.remove(FavoritedEmotes, foundIdx)
+	else
+		table.insert(FavoritedEmotes, { id = id, name = (name and name ~= "" and name ~= "Saved Emote") and name or "Saved Emote" })
+	end
+	SaveFavorites()
+	RefreshFavorites()
 end
 
 local function StopEmote()
@@ -399,11 +461,11 @@ CatToolbar.BorderColor3 = StudioTheme.border
 CatToolbar.Parent = CatalogContainer
 
 local SearchBox = Instance.new("TextBox")
-SearchBox.Size = UDim2.new(0, 210, 0, 22)
+SearchBox.Size = UDim2.new(0, 160, 0, 22)
 SearchBox.Position = UDim2.new(0, 6, 0, 5)
 SearchBox.BackgroundColor3 = StudioTheme.insetBg
 SearchBox.TextColor3 = StudioTheme.text
-SearchBox.PlaceholderText = "Search Catalog (Press Enter)..."
+SearchBox.PlaceholderText = "Search or Paste ID..."
 SearchBox.PlaceholderColor3 = StudioTheme.textDim
 SearchBox.Font = ThemeFont
 SearchBox.TextSize = 12
@@ -413,14 +475,17 @@ SearchBox.BorderSizePixel = 1
 SearchBox.BorderColor3 = StudioTheme.border
 SearchBox.Parent = CatToolbar
 
-local LoopCatBtn = makeStudioButton(CatToolbar, "Loop: ON", 84, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
-LoopCatBtn.Position = UDim2.new(0, 222, 0, 5)
+local PasteCatBtn = makeStudioButton(CatToolbar, "Paste ID", 68, 22, StudioTheme.btnBg, StudioTheme.text)
+PasteCatBtn.Position = UDim2.new(0, 172, 0, 5)
 
-local RandomCatBtn = makeStudioButton(CatToolbar, "Random", 76, 22, StudioTheme.btnBg, StudioTheme.text)
-RandomCatBtn.Position = UDim2.new(0, 312, 0, 5)
+local LoopCatBtn = makeStudioButton(CatToolbar, "Loop: ON", 80, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
+LoopCatBtn.Position = UDim2.new(0, 246, 0, 5)
 
-local StopCatBtn = makeStudioButton(CatToolbar, "Stop", 60, 22, StudioTheme.red, Color3.fromRGB(255, 255, 255))
-StopCatBtn.Position = UDim2.new(0, 394, 0, 5)
+local RandomCatBtn = makeStudioButton(CatToolbar, "Random", 70, 22, StudioTheme.btnBg, StudioTheme.text)
+RandomCatBtn.Position = UDim2.new(0, 332, 0, 5)
+
+local StopCatBtn = makeStudioButton(CatToolbar, "Stop", 55, 22, StudioTheme.red, Color3.fromRGB(255, 255, 255))
+StopCatBtn.Position = UDim2.new(0, 408, 0, 5)
 StopCatBtn.MouseButton1Click:Connect(StopEmote)
 
 local FavToolbar = Instance.new("Frame")
@@ -430,14 +495,17 @@ FavToolbar.BorderSizePixel = 1
 FavToolbar.BorderColor3 = StudioTheme.border
 FavToolbar.Parent = FavContainer
 
-local LoopFavBtn = makeStudioButton(FavToolbar, "Loop: ON", 90, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
+local LoopFavBtn = makeStudioButton(FavToolbar, "Loop: ON", 80, 22, StudioTheme.green, Color3.fromRGB(255, 255, 255))
 LoopFavBtn.Position = UDim2.new(0, 6, 0, 5)
 
-local RandomFavBtn = makeStudioButton(FavToolbar, "Play Random", 90, 22, StudioTheme.btnBg, StudioTheme.text)
-RandomFavBtn.Position = UDim2.new(0, 102, 0, 5)
+local RandomFavBtn = makeStudioButton(FavToolbar, "Play Random", 88, 22, StudioTheme.btnBg, StudioTheme.text)
+RandomFavBtn.Position = UDim2.new(0, 92, 0, 5)
 
-local StopFavBtn = makeStudioButton(FavToolbar, "Stop", 70, 22, StudioTheme.red, Color3.fromRGB(255, 255, 255))
-StopFavBtn.Position = UDim2.new(0, 198, 0, 5)
+local PasteFavBtn = makeStudioButton(FavToolbar, "+ Paste ID", 78, 22, StudioTheme.btnBg, StudioTheme.text)
+PasteFavBtn.Position = UDim2.new(0, 186, 0, 5)
+
+local StopFavBtn = makeStudioButton(FavToolbar, "Stop", 55, 22, StudioTheme.red, Color3.fromRGB(255, 255, 255))
+StopFavBtn.Position = UDim2.new(0, 270, 0, 5)
 StopFavBtn.MouseButton1Click:Connect(StopEmote)
 
 local function UpdateLoopState()
@@ -526,6 +594,26 @@ StatusLabel.Font = ThemeFont
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = Footer
 
+local function ResolveEmoteName(id)
+	id = tonumber(id)
+	if not id then return "Custom Emote" end
+
+	for _, e in ipairs(Emotes) do
+		if e.id == id and e.name and e.name ~= "" and e.name ~= "Saved Emote" and e.name ~= "Custom Emote" then
+			return e.name
+		end
+	end
+
+	local succ, info = pcall(function()
+		return game:GetService("MarketplaceService"):GetProductInfo(id, Enum.InfoType.Asset)
+	end)
+	if succ and info and info.Name and info.Name ~= "" then
+		return info.Name
+	end
+
+	return "Emote #" .. tostring(id)
+end
+
 local function GetRawEmoteId(catalogId, name)
 	if EmoteCache[catalogId] then return EmoteCache[catalogId] end
 
@@ -566,7 +654,10 @@ local function GetRawEmoteId(catalogId, name)
 		end
 	end
 
-	return nil
+	-- Fallback for direct custom dance/animation IDs
+	local directId = "rbxassetid://" .. tostring(catalogId)
+	EmoteCache[catalogId] = directId
+	return directId
 end
 
 local function PlayEmote(id, name)
@@ -575,25 +666,40 @@ local function PlayEmote(id, name)
 	local Humanoid = Character:FindFirstChildOfClass("Humanoid")
 	local Animator = Humanoid and Humanoid:FindFirstChildOfClass("Animator")
 	
-	if not Animator or Humanoid.RigType == Enum.HumanoidRigType.R6 then return end
+	if not Animator or Humanoid.RigType == Enum.HumanoidRigType.R6 then 
+		StatusLabel.Text = "Failed: Character must be R15."
+		return 
+	end
 
 	StopEmote()
 
-	local rawId = GetRawEmoteId(id, name)
-	
-	if rawId then
-		local customAnim = Instance.new("Animation")
-		customAnim.AnimationId = rawId
-		local customTrack = Animator:LoadAnimation(customAnim)
-		customTrack.Priority = Enum.AnimationPriority.Action4
-		customTrack:SetAttribute("IsCustomEmote", true)
-		customTrack.Looped = LoopEmotes
-		customTrack:Play()
-		currentEmoteTrack = customTrack
-		forceEmote = true
-		activeEmoteName = name or "Emote"
-		StatusLabel.Text = string.format("Playing: %s  |  Loop: %s  |  [ X ] to Stop", activeEmoteName, LoopEmotes and "ON" or "OFF")
-	end
+	StatusLabel.Text = string.format("Loading: %s...", name or tostring(id))
+
+	task.spawn(function()
+		local rawId = GetRawEmoteId(id, name)
+		
+		if rawId then
+			local customAnim = Instance.new("Animation")
+			customAnim.AnimationId = rawId
+			local succ, customTrack = pcall(function()
+				return Animator:LoadAnimation(customAnim)
+			end)
+			if succ and customTrack then
+				customTrack.Priority = Enum.AnimationPriority.Action4
+				customTrack:SetAttribute("IsCustomEmote", true)
+				customTrack.Looped = LoopEmotes
+				customTrack:Play()
+				currentEmoteTrack = customTrack
+				forceEmote = true
+				activeEmoteName = name or "Emote"
+				StatusLabel.Text = string.format("Playing: %s  |  Loop: %s  |  [ X ] to Stop", activeEmoteName, LoopEmotes and "ON" or "OFF")
+			else
+				StatusLabel.Text = "Failed to load animation track for " .. tostring(name or id)
+			end
+		else
+			StatusLabel.Text = "Failed to resolve animation for " .. tostring(name or id)
+		end
+	end)
 end
 
 local function CreateEmoteCard(emote, parentScroll)
@@ -602,6 +708,7 @@ local function CreateEmoteCard(emote, parentScroll)
 	Card.BorderSizePixel = 1
 	Card.BorderColor3 = StudioTheme.border
 	Card.ClipsDescendants = true
+	Card:SetAttribute("EmoteId", emote.id)
 
 	local IconContainer = Instance.new("Frame")
 	IconContainer.Size = UDim2.new(1, -6, 0, 80)
@@ -618,10 +725,11 @@ local function CreateEmoteCard(emote, parentScroll)
 	Icon.Parent = IconContainer
 	
 	local NameLabel = Instance.new("TextLabel")
+	NameLabel.Name = "NameLabel"
 	NameLabel.Size = UDim2.new(1, -6, 0, 26)
 	NameLabel.Position = UDim2.new(0, 3, 0, 86)
 	NameLabel.BackgroundTransparency = 1
-	NameLabel.Text = emote.name
+	NameLabel.Text = emote.name or ("Emote #" .. tostring(emote.id))
 	NameLabel.TextColor3 = StudioTheme.text
 	NameLabel.Font = ThemeFontSemibold
 	NameLabel.TextSize = 11
@@ -631,6 +739,7 @@ local function CreateEmoteCard(emote, parentScroll)
 	NameLabel.Parent = Card
 
 	local FavToggle = Instance.new("TextButton")
+	FavToggle.Name = "FavToggle"
 	FavToggle.Size = UDim2.new(0, 20, 0, 20)
 	FavToggle.Position = UDim2.new(1, -22, 0, 2)
 	FavToggle.BackgroundTransparency = 1
@@ -638,7 +747,7 @@ local function CreateEmoteCard(emote, parentScroll)
 	FavToggle.Font = ThemeFontBold
 	FavToggle.Parent = Card
 
-	local isFav = table.find(FavoritedEmotes, emote.id)
+	local isFav = isEmoteFav(emote.id)
 	FavToggle.Text = isFav and "[X]" or "[+]"
 	FavToggle.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
 
@@ -656,21 +765,11 @@ local function CreateEmoteCard(emote, parentScroll)
 	end)
 
 	FavToggle.MouseButton1Click:Connect(function()
-		local idx = table.find(FavoritedEmotes, emote.id)
-		if idx then
-			table.remove(FavoritedEmotes, idx)
-			FavToggle.Text = "[+]"
-			FavToggle.TextColor3 = StudioTheme.textDim
-		else
-			table.insert(FavoritedEmotes, emote.id)
-			FavToggle.Text = "[X]"
-			FavToggle.TextColor3 = StudioTheme.yellow
-		end
-		SaveFavorites()
-		RefreshFavorites()
+		toggleFav(emote.id, emote.name)
 	end)
 
 	Card.Parent = parentScroll
+	return Card
 end
 
 function RefreshFavorites()
@@ -678,13 +777,69 @@ function RefreshFavorites()
 		if child:IsA("Frame") then child:Destroy() end
 	end
 	FavTabBtn.Text = string.format("Favorites (%d)", #FavoritedEmotes)
-	for _, id in ipairs(FavoritedEmotes) do
-		local emoteData = {id = id, name = "Saved Emote"}
-		for _, e in ipairs(Emotes) do
-			if e.id == id then emoteData.name = e.name; break end
+	for _, fav in ipairs(FavoritedEmotes) do
+		local emoteData = { id = fav.id, name = fav.name or "Saved Emote" }
+		if emoteData.name == "Saved Emote" or emoteData.name == "Custom Emote" then
+			for _, e in ipairs(Emotes) do
+				if e.id == fav.id and e.name and e.name ~= "" and e.name ~= "Saved Emote" then
+					emoteData.name = e.name
+					fav.name = e.name
+					SaveFavorites()
+					break
+				end
+			end
 		end
-		CreateEmoteCard(emoteData, FavScroll)
+
+		local card = CreateEmoteCard(emoteData, FavScroll)
+
+		if emoteData.name == "Saved Emote" or emoteData.name == "Custom Emote" then
+			task.spawn(function()
+				local realName = ResolveEmoteName(fav.id)
+				if realName and realName ~= "Saved Emote" and realName ~= "Custom Emote" then
+					fav.name = realName
+					SaveFavorites()
+					if card and card.Parent then
+						local nameLbl = card:FindFirstChild("NameLabel")
+						if nameLbl then
+							nameLbl.Text = realName
+						end
+					end
+				end
+			end)
+		end
 	end
+end
+
+local function LoadAndPlayCustomEmote(rawInput, autoFav)
+	local numId = extractId(rawInput)
+	if not numId then
+		StatusLabel.Text = "Status: Invalid animation ID or URL."
+		return
+	end
+
+	StatusLabel.Text = "Resolving emote #" .. tostring(numId) .. " from Roblox..."
+
+	task.spawn(function()
+		local emoteName = ResolveEmoteName(numId)
+		local emoteData = { id = numId, name = emoteName }
+
+		local exists = false
+		for _, e in ipairs(Emotes) do
+			if e.id == numId then exists = true; break end
+		end
+		if not exists then
+			table.insert(Emotes, 1, emoteData)
+			CreateEmoteCard(emoteData, CatScroll)
+		end
+
+		if autoFav and not isEmoteFav(numId) then
+			table.insert(FavoritedEmotes, { id = numId, name = emoteName })
+			SaveFavorites()
+			RefreshFavorites()
+		end
+
+		PlayEmote(numId, emoteName)
+	end)
 end
 
 local function ProcessCatalogPage(pageData)
@@ -747,9 +902,40 @@ local canvasConn = CatScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(
 end)
 table.insert(activeConnections, canvasConn)
 
+PasteCatBtn.MouseButton1Click:Connect(function()
+	local clip = safeGetClipboard()
+	if clip and extractId(clip) then
+		LoadAndPlayCustomEmote(clip, false)
+	else
+		SearchBox.Text = ""
+		SearchBox.PlaceholderText = "Paste ID or URL here..."
+		SearchBox:CaptureFocus()
+		StatusLabel.Text = "Paste ID or URL into search box and press Enter."
+	end
+end)
+
+PasteFavBtn.MouseButton1Click:Connect(function()
+	local clip = safeGetClipboard()
+	if clip and extractId(clip) then
+		LoadAndPlayCustomEmote(clip, true)
+	else
+		selectTab(true)
+		SearchBox.Text = ""
+		SearchBox.PlaceholderText = "Paste ID or URL to favorite..."
+		SearchBox:CaptureFocus()
+		StatusLabel.Text = "Paste ID into search box and press Enter (will be favorited)."
+	end
+end)
+
 SearchBox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
-		FetchCatalog(SearchBox.Text)
+		local text = SearchBox.Text
+		local numId = extractId(text)
+		if numId and (text:match("^%s*%d+%s*$") or text:match("roblox%.com") or text:match("rbxassetid://")) then
+			LoadAndPlayCustomEmote(text, false)
+		else
+			FetchCatalog(text)
+		end
 	end
 end)
 
@@ -773,8 +959,10 @@ end)
 
 RandomFavBtn.MouseButton1Click:Connect(function()
 	if #FavoritedEmotes > 0 then
-		local randId = FavoritedEmotes[math.random(1, #FavoritedEmotes)]
-		PlayEmote(randId, "Saved Emote")
+		local rand = FavoritedEmotes[math.random(1, #FavoritedEmotes)]
+		local id = type(rand) == "table" and rand.id or rand
+		local name = type(rand) == "table" and rand.name or "Saved Emote"
+		PlayEmote(id, name)
 	end
 end)
 
