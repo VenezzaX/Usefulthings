@@ -168,6 +168,8 @@ local currentEmoteTrack = nil
 local forceEmote = false
 local activeEmoteName = "None"
 local activeConnections = {}
+local RefreshFavorites
+local updateAllCardsFavVisuals
 
 local function safeGetClipboard()
 	local clip = nil
@@ -222,7 +224,8 @@ local function isEmoteFav(id)
 	id = tonumber(id)
 	if not id then return false end
 	for _, fav in ipairs(FavoritedEmotes) do
-		if fav.id == id then return true end
+		local favId = type(fav) == "table" and tonumber(fav.id) or tonumber(fav)
+		if favId == id then return true end
 	end
 	return false
 end
@@ -232,7 +235,8 @@ local function toggleFav(id, name)
 	if not id then return end
 	local foundIdx = nil
 	for idx, fav in ipairs(FavoritedEmotes) do
-		if fav.id == id then
+		local favId = type(fav) == "table" and tonumber(fav.id) or tonumber(fav)
+		if favId == id then
 			foundIdx = idx
 			break
 		end
@@ -243,7 +247,8 @@ local function toggleFav(id, name)
 		table.insert(FavoritedEmotes, { id = id, name = (name and name ~= "" and name ~= "Saved Emote") and name or "Saved Emote" })
 	end
 	SaveFavorites()
-	RefreshFavorites()
+	if RefreshFavorites then RefreshFavorites() end
+	if updateAllCardsFavVisuals then updateAllCardsFavVisuals() end
 end
 
 local function StopEmote()
@@ -448,6 +453,12 @@ local function selectTab(isCatalog)
 	FavTabBtn.BackgroundColor3 = (not isCatalog) and StudioTheme.tabActive or StudioTheme.tabInactive
 	FavTabBtn.TextColor3 = (not isCatalog) and StudioTheme.text or StudioTheme.textMuted
 	FavTabAccent.Visible = not isCatalog
+
+	if not isCatalog then
+		if RefreshFavorites then RefreshFavorites() end
+	else
+		if updateAllCardsFavVisuals then updateAllCardsFavVisuals() end
+	end
 end
 
 CatalogTabBtn.MouseButton1Click:Connect(function() selectTab(true) end)
@@ -740,16 +751,35 @@ local function CreateEmoteCard(emote, parentScroll)
 
 	local FavToggle = Instance.new("TextButton")
 	FavToggle.Name = "FavToggle"
-	FavToggle.Size = UDim2.new(0, 20, 0, 20)
-	FavToggle.Position = UDim2.new(1, -22, 0, 2)
-	FavToggle.BackgroundTransparency = 1
+	FavToggle.Size = UDim2.new(0, 24, 0, 20)
+	FavToggle.Position = UDim2.new(1, -26, 0, 3)
+	FavToggle.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+	FavToggle.BackgroundTransparency = 0.25
+	FavToggle.BorderSizePixel = 1
+	FavToggle.BorderColor3 = StudioTheme.border
 	FavToggle.TextSize = 11
 	FavToggle.Font = ThemeFontBold
+	FavToggle.Active = true
+	FavToggle.AutoButtonColor = true
+	FavToggle.ZIndex = 25
 	FavToggle.Parent = Card
+
+	local favCorner = Instance.new("UICorner")
+	favCorner.CornerRadius = UDim.new(0, 4)
+	favCorner.Parent = FavToggle
 
 	local isFav = isEmoteFav(emote.id)
 	FavToggle.Text = isFav and "[X]" or "[+]"
 	FavToggle.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
+
+	FavToggle.MouseEnter:Connect(function()
+		FavToggle.BackgroundTransparency = 0
+		FavToggle.BorderColor3 = StudioTheme.blue
+	end)
+	FavToggle.MouseLeave:Connect(function()
+		FavToggle.BackgroundTransparency = 0.25
+		FavToggle.BorderColor3 = StudioTheme.border
+	end)
 
 	Card.MouseEnter:Connect(function()
 		Card.BackgroundColor3 = StudioTheme.cardHover
@@ -770,6 +800,25 @@ local function CreateEmoteCard(emote, parentScroll)
 
 	Card.Parent = parentScroll
 	return Card
+end
+
+function updateAllCardsFavVisuals()
+	local function updateScroll(scrollFrame)
+		if not scrollFrame then return end
+		for _, card in ipairs(scrollFrame:GetChildren()) do
+			if card:IsA("Frame") then
+				local eId = card:GetAttribute("EmoteId")
+				local fBtn = card:FindFirstChild("FavToggle")
+				if eId and fBtn then
+					local isFav = isEmoteFav(eId)
+					fBtn.Text = isFav and "[X]" or "[+]"
+					fBtn.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
+				end
+			end
+		end
+	end
+	updateScroll(CatScroll)
+	updateScroll(FavScroll)
 end
 
 function RefreshFavorites()
@@ -914,11 +963,14 @@ PasteCatBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
+local pendingFavFromSearch = false
+
 PasteFavBtn.MouseButton1Click:Connect(function()
 	local clip = safeGetClipboard()
 	if clip and extractId(clip) then
 		LoadAndPlayCustomEmote(clip, true)
 	else
+		pendingFavFromSearch = true
 		selectTab(true)
 		SearchBox.Text = ""
 		SearchBox.PlaceholderText = "Paste ID or URL to favorite..."
@@ -932,8 +984,11 @@ SearchBox.FocusLost:Connect(function(enterPressed)
 		local text = SearchBox.Text
 		local numId = extractId(text)
 		if numId and (text:match("^%s*%d+%s*$") or text:match("roblox%.com") or text:match("rbxassetid://")) then
-			LoadAndPlayCustomEmote(text, false)
+			local autoFav = pendingFavFromSearch
+			pendingFavFromSearch = false
+			LoadAndPlayCustomEmote(text, autoFav)
 		else
+			pendingFavFromSearch = false
 			FetchCatalog(text)
 		end
 	end
@@ -988,6 +1043,7 @@ local heartConn = RunService.Heartbeat:Connect(function()
 end)
 table.insert(activeConnections, heartConn)
 
+RefreshFavorites()
 FetchCatalog()
 
 env._EmoteHubCleanup = function()
