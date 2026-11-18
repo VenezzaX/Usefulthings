@@ -57,31 +57,104 @@ cleanAllPreviousInstances({
 	"StudioAnimationHub"
 })
 
-local StudioTheme = {
-	windowBg       = Color3.fromRGB(37, 37, 38),
-	headerBg       = Color3.fromRGB(45, 45, 48),
-	panelBg        = Color3.fromRGB(42, 42, 45),
-	panelAlt       = Color3.fromRGB(32, 32, 34),
-	insetBg        = Color3.fromRGB(26, 26, 28),
-	cardBg         = Color3.fromRGB(44, 44, 48),
-	cardHover      = Color3.fromRGB(56, 56, 62),
-	border         = Color3.fromRGB(20, 20, 22),
-	borderSubtle   = Color3.fromRGB(55, 55, 58),
-	text           = Color3.fromRGB(225, 225, 228),
-	textMuted      = Color3.fromRGB(160, 160, 165),
-	textDim        = Color3.fromRGB(115, 115, 120),
-	blue           = Color3.fromRGB(0, 122, 204),
-	blueHover      = Color3.fromRGB(28, 140, 224), 
-	green          = Color3.fromRGB(76, 175, 80),
-	greenHover     = Color3.fromRGB(92, 195, 96),  
-	red            = Color3.fromRGB(215, 60, 60),
-	redHover       = Color3.fromRGB(235, 75, 75),   
-	yellow         = Color3.fromRGB(230, 180, 50),
-	btnBg          = Color3.fromRGB(50, 50, 54),
-	btnHover       = Color3.fromRGB(65, 65, 70),
-	tabActive      = Color3.fromRGB(40, 40, 42),
-	tabInactive    = Color3.fromRGB(30, 30, 32),
-}
+local VH = _G.VoidHub
+local isClassic = false
+local isWasorModern = false
+
+if VH and VH.UI then
+    if (VH.UI.themeColors and VH.UI.themeColors["Studio Classic"]) or (_G.WASOR_ScreenGui and _G.WASOR_ScreenGui:FindFirstChild("StudioTopRibbon")) then
+        isClassic = true
+    else
+        isWasorModern = true
+    end
+end
+
+local StudioTheme
+if isWasorModern then
+    local curAccent = (VH.State and VH.State.currentThemeColor) or (VH.UI and VH.UI.themeColors and VH.UI.themeColors["Red"]) or Color3.fromRGB(218, 38, 38)
+    StudioTheme = {
+        isModern       = true,
+        font           = Enum.Font.Gotham,
+        fontBold       = Enum.Font.GothamBold,
+        fontSemibold   = Enum.Font.GothamMedium,
+        cornerRadius   = 6,
+        borderSize     = 0,
+        
+        windowBg       = Color3.fromRGB(18, 18, 22),
+        headerBg       = Color3.fromRGB(24, 24, 28),
+        panelBg        = Color3.fromRGB(22, 22, 26),
+        panelAlt       = Color3.fromRGB(16, 16, 18),
+        insetBg        = Color3.fromRGB(14, 14, 16),
+        categoryBg     = Color3.fromRGB(30, 30, 35),
+        cardBg         = Color3.fromRGB(26, 26, 30),
+        cardHover      = Color3.fromRGB(36, 36, 42),
+        border         = Color3.fromRGB(38, 38, 44),
+        borderSubtle   = Color3.fromRGB(48, 48, 54),
+        text           = Color3.fromRGB(240, 240, 245),
+        textMuted      = Color3.fromRGB(160, 160, 170),
+        textDim        = Color3.fromRGB(115, 115, 125),
+        
+        blue           = curAccent,
+        blueHover      = Color3.fromRGB(math.clamp(math.floor(curAccent.R * 255 + 25), 0, 255), math.clamp(math.floor(curAccent.G * 255 + 25), 0, 255), math.clamp(math.floor(curAccent.B * 255 + 25), 0, 255)),
+        green          = Color3.fromRGB(46, 204, 113),
+        greenHover     = Color3.fromRGB(56, 218, 125),
+        red            = Color3.fromRGB(218, 38, 38),
+        redHover       = Color3.fromRGB(238, 58, 58),
+        yellow         = Color3.fromRGB(241, 196, 15),
+        purple         = Color3.fromRGB(141, 47, 196),
+        btnBg          = Color3.fromRGB(32, 32, 36),
+        btnHover       = Color3.fromRGB(44, 44, 50),
+        btnPressed     = curAccent,
+        tabActive      = Color3.fromRGB(26, 26, 30),
+        tabInactive    = Color3.fromRGB(18, 18, 20),
+        Product        = curAccent,
+        Gamepass       = Color3.fromRGB(141, 47, 196),
+        Bulk           = Color3.fromRGB(241, 196, 15),
+    }
+else
+    StudioTheme = {
+        isModern       = false,
+        font           = ThemeFont,
+        fontBold       = ThemeFontBold,
+        fontSemibold   = ThemeFontSemibold,
+        cornerRadius   = 0,
+        borderSize     = 1,
+        
+        windowBg       = Color3.fromRGB(37, 37, 38),
+        headerBg       = Color3.fromRGB(45, 45, 48),
+        panelBg        = Color3.fromRGB(42, 42, 45),
+        panelAlt       = Color3.fromRGB(32, 32, 34),
+        insetBg        = Color3.fromRGB(26, 26, 28),
+        categoryBg     = Color3.fromRGB(50, 50, 54),
+        cardBg         = Color3.fromRGB(44, 44, 48),
+        cardHover      = Color3.fromRGB(56, 56, 62),
+        border         = Color3.fromRGB(20, 20, 22),
+        borderSubtle   = Color3.fromRGB(55, 55, 58),
+        text           = Color3.fromRGB(225, 225, 228),
+        textMuted      = Color3.fromRGB(160, 160, 165),
+        textDim        = Color3.fromRGB(115, 115, 120),
+        blue           = Color3.fromRGB(0, 122, 204),
+        blueHover      = Color3.fromRGB(28, 140, 224), 
+        green          = Color3.fromRGB(76, 175, 80),
+        greenHover     = Color3.fromRGB(92, 195, 96),  
+        red            = Color3.fromRGB(215, 60, 60),
+        redHover       = Color3.fromRGB(235, 75, 75),   
+        yellow         = Color3.fromRGB(230, 180, 50),
+        purple         = Color3.fromRGB(160, 120, 220),
+        btnBg          = Color3.fromRGB(50, 50, 54),
+        btnHover       = Color3.fromRGB(65, 65, 70),
+        btnPressed     = Color3.fromRGB(0, 122, 204),
+        tabActive      = Color3.fromRGB(40, 40, 42),
+        tabInactive    = Color3.fromRGB(30, 30, 32),
+        Product        = Color3.fromRGB(0, 122, 204),
+        Gamepass       = Color3.fromRGB(160, 120, 220),
+        Bulk           = Color3.fromRGB(230, 180, 50),
+    }
+end
+local ThemeFont = StudioTheme.font
+local ThemeFontSemibold = StudioTheme.fontSemibold
+local ThemeFontBold = StudioTheme.fontBold
+
 
 -- Popular bundle IDs for instant fallback loading (All animation data & metadata is pulled live from Roblox)
 local DEFAULT_POPULAR_BUNDLE_IDS = {
@@ -160,10 +233,13 @@ local function makeStudioButton(parent, text, w, h, bg, fg)
 	b.Text = text
 	b.TextColor3 = fg or StudioTheme.text
 	b.TextSize = 12
-	b.Font = Enum.Font.SourceSansSemibold
+	b.Font = ThemeFontSemibold
 	b.AutoButtonColor = false
-	b.BorderSizePixel = 1
+	b.BorderSizePixel = StudioTheme.borderSize or (StudioTheme.isModern and 0 or 1)
 	b.BorderColor3 = StudioTheme.border
+	if StudioTheme.isModern then
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+	end
 	b.ClipsDescendants = true
 	b.Parent = parent
 
@@ -194,8 +270,16 @@ MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 510, 0, 440)
 MainFrame.Position = UDim2.new(0.5, -255, 0.5, -220)
 MainFrame.BackgroundColor3 = StudioTheme.windowBg
-MainFrame.BorderSizePixel = 1
-MainFrame.BorderColor3 = StudioTheme.border
+if StudioTheme.isModern then
+    MainFrame.BorderSizePixel = 0
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+    local s = Instance.new("UIStroke", MainFrame)
+    s.Color = StudioTheme.border
+    s.Thickness = 1
+else
+    MainFrame.BorderSizePixel = 1
+    MainFrame.BorderColor3 = StudioTheme.border
+end
 MainFrame.Visible = false
 MainFrame.Active = true
 MainFrame.ClipsDescendants = true
@@ -216,7 +300,7 @@ Title.BackgroundTransparency = 1
 Title.Text = "Toolbox - R15 Animation Pack Explorer"
 Title.TextColor3 = StudioTheme.text
 Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Font = Enum.Font.SourceSansSemibold
+Title.Font = ThemeFontSemibold
 Title.TextSize = 13
 Title.Parent = TopBar
 
@@ -227,7 +311,7 @@ CloseBtn.BackgroundColor3 = StudioTheme.headerBg
 CloseBtn.BorderSizePixel = 0
 CloseBtn.Text = "X"
 CloseBtn.TextColor3 = StudioTheme.textMuted
-CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.Font = ThemeFontBold
 CloseBtn.TextSize = 12
 CloseBtn.Parent = TopBar
 
@@ -280,7 +364,7 @@ CatalogTabBtn.BorderSizePixel = 1
 CatalogTabBtn.BorderColor3 = StudioTheme.border
 CatalogTabBtn.Text = "Animation Packs"
 CatalogTabBtn.TextColor3 = StudioTheme.text
-CatalogTabBtn.Font = Enum.Font.SourceSansSemibold
+CatalogTabBtn.Font = ThemeFontSemibold
 CatalogTabBtn.TextSize = 12
 CatalogTabBtn.Parent = TabStrip
 
@@ -299,7 +383,7 @@ FavTabBtn.BorderSizePixel = 1
 FavTabBtn.BorderColor3 = StudioTheme.border
 FavTabBtn.Text = "Favorites"
 FavTabBtn.TextColor3 = StudioTheme.textMuted
-FavTabBtn.Font = Enum.Font.SourceSansSemibold
+FavTabBtn.Font = ThemeFontSemibold
 FavTabBtn.TextSize = 12
 FavTabBtn.Parent = TabStrip
 
@@ -354,7 +438,7 @@ SearchBox.BackgroundColor3 = StudioTheme.insetBg
 SearchBox.TextColor3 = StudioTheme.text
 SearchBox.PlaceholderText = "Search Packs or Bundle ID..."
 SearchBox.PlaceholderColor3 = StudioTheme.textDim
-SearchBox.Font = Enum.Font.SourceSans
+SearchBox.Font = ThemeFont
 SearchBox.TextSize = 12
 SearchBox.TextXAlignment = Enum.TextXAlignment.Left
 SearchBox.ClearTextOnFocus = false
@@ -432,7 +516,7 @@ StatusLabel.Position = UDim2.new(0, 6, 0, 0)
 StatusLabel.Text = "Shortcuts: [ , ] Toggle UI  |  Equipped: Default"
 StatusLabel.TextColor3 = StudioTheme.textDim
 StatusLabel.TextSize = 11
-StatusLabel.Font = Enum.Font.SourceSans
+StatusLabel.Font = ThemeFont
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = Footer
 
@@ -701,7 +785,7 @@ local function CreatePackCard(pack, parentScroll)
 	NameLabel.BackgroundTransparency = 1
 	NameLabel.Text = cleanName
 	NameLabel.TextColor3 = StudioTheme.text
-	NameLabel.Font = Enum.Font.SourceSansSemibold
+	NameLabel.Font = ThemeFontSemibold
 	NameLabel.TextSize = 11
 	NameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	NameLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -713,7 +797,7 @@ local function CreatePackCard(pack, parentScroll)
 	FavToggle.Position = UDim2.new(1, -22, 0, 2)
 	FavToggle.BackgroundTransparency = 1
 	FavToggle.TextSize = 11
-	FavToggle.Font = Enum.Font.SourceSansBold
+	FavToggle.Font = ThemeFontBold
 	FavToggle.Parent = Card
 
 	local isFav = table.find(FavoritedPacks, pack.id)
