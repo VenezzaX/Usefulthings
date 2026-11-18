@@ -64,29 +64,104 @@ local uiVisible = true
 local reopenButton = nil
 local activeConnections = {}
 
-local StudioTheme = {
-	windowBg       = Color3.fromRGB(37, 37, 38),
-	headerBg       = Color3.fromRGB(45, 45, 48),
-	panelBg        = Color3.fromRGB(42, 42, 45),
-	panelAlt       = Color3.fromRGB(34, 34, 36),
-	insetBg        = Color3.fromRGB(26, 26, 28),
-	border         = Color3.fromRGB(20, 20, 22),
-	borderSubtle   = Color3.fromRGB(55, 55, 58),
-	text           = Color3.fromRGB(225, 225, 228),
-	textMuted      = Color3.fromRGB(160, 160, 165),
-	textDim        = Color3.fromRGB(115, 115, 120),
-	blue           = Color3.fromRGB(0, 122, 204),
-	blueHover      = Color3.fromRGB(28, 140, 224),
-	green          = Color3.fromRGB(76, 175, 80),
-	greenHover     = Color3.fromRGB(92, 195, 96),  
-	red            = Color3.fromRGB(215, 60, 60),
-	redHover       = Color3.fromRGB(235, 75, 75),   
-	yellow         = Color3.fromRGB(220, 170, 50),
-	purple         = Color3.fromRGB(150, 115, 210),
-	btnBg          = Color3.fromRGB(50, 50, 54),
-	btnHover       = Color3.fromRGB(65, 65, 70),
-	btnPressed     = Color3.fromRGB(0, 122, 204),
-}
+local VH = _G.VoidHub
+local isClassic = false
+local isWasorModern = false
+
+if VH and VH.UI then
+    if (VH.UI.themeColors and VH.UI.themeColors["Studio Classic"]) or (_G.WASOR_ScreenGui and _G.WASOR_ScreenGui:FindFirstChild("StudioTopRibbon")) then
+        isClassic = true
+    else
+        isWasorModern = true
+    end
+end
+
+local StudioTheme
+if isWasorModern then
+    local curAccent = (VH.State and VH.State.currentThemeColor) or (VH.UI and VH.UI.themeColors and VH.UI.themeColors["Red"]) or Color3.fromRGB(218, 38, 38)
+    StudioTheme = {
+        isModern       = true,
+        font           = Enum.Font.Gotham,
+        fontBold       = Enum.Font.GothamBold,
+        fontSemibold   = Enum.Font.GothamMedium,
+        cornerRadius   = 6,
+        borderSize     = 0,
+        
+        windowBg       = Color3.fromRGB(18, 18, 22),
+        headerBg       = Color3.fromRGB(24, 24, 28),
+        panelBg        = Color3.fromRGB(22, 22, 26),
+        panelAlt       = Color3.fromRGB(16, 16, 18),
+        insetBg        = Color3.fromRGB(14, 14, 16),
+        categoryBg     = Color3.fromRGB(30, 30, 35),
+        cardBg         = Color3.fromRGB(26, 26, 30),
+        cardHover      = Color3.fromRGB(36, 36, 42),
+        border         = Color3.fromRGB(38, 38, 44),
+        borderSubtle   = Color3.fromRGB(48, 48, 54),
+        text           = Color3.fromRGB(240, 240, 245),
+        textMuted      = Color3.fromRGB(160, 160, 170),
+        textDim        = Color3.fromRGB(115, 115, 125),
+        
+        blue           = curAccent,
+        blueHover      = Color3.fromRGB(math.clamp(math.floor(curAccent.R * 255 + 25), 0, 255), math.clamp(math.floor(curAccent.G * 255 + 25), 0, 255), math.clamp(math.floor(curAccent.B * 255 + 25), 0, 255)),
+        green          = Color3.fromRGB(46, 204, 113),
+        greenHover     = Color3.fromRGB(56, 218, 125),
+        red            = Color3.fromRGB(218, 38, 38),
+        redHover       = Color3.fromRGB(238, 58, 58),
+        yellow         = Color3.fromRGB(241, 196, 15),
+        purple         = Color3.fromRGB(141, 47, 196),
+        btnBg          = Color3.fromRGB(32, 32, 36),
+        btnHover       = Color3.fromRGB(44, 44, 50),
+        btnPressed     = curAccent,
+        tabActive      = Color3.fromRGB(26, 26, 30),
+        tabInactive    = Color3.fromRGB(18, 18, 20),
+        Product        = curAccent,
+        Gamepass       = Color3.fromRGB(141, 47, 196),
+        Bulk           = Color3.fromRGB(241, 196, 15),
+    }
+else
+    StudioTheme = {
+        isModern       = false,
+        font           = ThemeFont,
+        fontBold       = ThemeFontBold,
+        fontSemibold   = ThemeFontSemibold,
+        cornerRadius   = 0,
+        borderSize     = 1,
+        
+        windowBg       = Color3.fromRGB(37, 37, 38),
+        headerBg       = Color3.fromRGB(45, 45, 48),
+        panelBg        = Color3.fromRGB(42, 42, 45),
+        panelAlt       = Color3.fromRGB(32, 32, 34),
+        insetBg        = Color3.fromRGB(26, 26, 28),
+        categoryBg     = Color3.fromRGB(50, 50, 54),
+        cardBg         = Color3.fromRGB(44, 44, 48),
+        cardHover      = Color3.fromRGB(56, 56, 62),
+        border         = Color3.fromRGB(20, 20, 22),
+        borderSubtle   = Color3.fromRGB(55, 55, 58),
+        text           = Color3.fromRGB(225, 225, 228),
+        textMuted      = Color3.fromRGB(160, 160, 165),
+        textDim        = Color3.fromRGB(115, 115, 120),
+        blue           = Color3.fromRGB(0, 122, 204),
+        blueHover      = Color3.fromRGB(28, 140, 224), 
+        green          = Color3.fromRGB(76, 175, 80),
+        greenHover     = Color3.fromRGB(92, 195, 96),  
+        red            = Color3.fromRGB(215, 60, 60),
+        redHover       = Color3.fromRGB(235, 75, 75),   
+        yellow         = Color3.fromRGB(230, 180, 50),
+        purple         = Color3.fromRGB(160, 120, 220),
+        btnBg          = Color3.fromRGB(50, 50, 54),
+        btnHover       = Color3.fromRGB(65, 65, 70),
+        btnPressed     = Color3.fromRGB(0, 122, 204),
+        tabActive      = Color3.fromRGB(40, 40, 42),
+        tabInactive    = Color3.fromRGB(30, 30, 32),
+        Product        = Color3.fromRGB(0, 122, 204),
+        Gamepass       = Color3.fromRGB(160, 120, 220),
+        Bulk           = Color3.fromRGB(230, 180, 50),
+    }
+end
+local ThemeFont = StudioTheme.font
+local ThemeFontSemibold = StudioTheme.fontSemibold
+local ThemeFontBold = StudioTheme.fontBold
+
 
 local TITLE_H = 26
 local RIBBON_H = 34
@@ -245,10 +320,13 @@ local function makeStudioButton(parent, text, w, h, bg, fg)
 	b.Text = text
 	b.TextColor3 = fg or StudioTheme.text
 	b.TextSize = 12
-	b.Font = Enum.Font.SourceSansSemibold
+	b.Font = ThemeFontSemibold
 	b.AutoButtonColor = false
-	b.BorderSizePixel = 1
+	b.BorderSizePixel = StudioTheme.borderSize or (StudioTheme.isModern and 0 or 1)
 	b.BorderColor3 = StudioTheme.border
+	if StudioTheme.isModern then
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+	end
 	b.Parent = parent
 
 	local defaultBg = bg or StudioTheme.btnBg
@@ -270,7 +348,7 @@ local function makeStudioTextBox(parent, text, width, height, placeholder, fontC
 	box.PlaceholderColor3 = StudioTheme.textDim
 	box.TextColor3 = StudioTheme.text
 	box.TextSize = 12
-	box.Font = fontCode and Enum.Font.Code or Enum.Font.SourceSans
+	box.Font = fontCode and Enum.Font.Code or ThemeFont
 	box.ClearTextOnFocus = false
 	box.BorderSizePixel = 1
 	box.BorderColor3 = StudioTheme.border
@@ -283,8 +361,16 @@ panel.Name = "StudioCoordinatePanel"
 panel.Size = UDim2.new(0, 660, 0, 290)
 panel.Position = UDim2.new(0.5, -330, 0.5, -145)
 panel.BackgroundColor3 = StudioTheme.windowBg
-panel.BorderSizePixel = 1
-panel.BorderColor3 = StudioTheme.border
+if StudioTheme.isModern then
+    panel.BorderSizePixel = 0
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
+    local s = Instance.new("UIStroke", panel)
+    s.Color = StudioTheme.border
+    s.Thickness = 1
+else
+    panel.BorderSizePixel = 1
+    panel.BorderColor3 = StudioTheme.border
+end
 panel.Active = true
 panel.ClipsDescendants = true
 panel.Parent = screenGui
@@ -309,7 +395,7 @@ title.Position = UDim2.new(0, 8, 0, 0)
 title.Text = "Properties - Waypoints & Coordinates"
 title.TextColor3 = StudioTheme.text
 title.TextSize = 13
-title.Font = Enum.Font.SourceSansSemibold
+title.Font = ThemeFontSemibold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = titleBar
 
@@ -320,7 +406,7 @@ closeBtn.BackgroundColor3 = StudioTheme.headerBg
 closeBtn.BorderSizePixel = 0
 closeBtn.Text = "X"
 closeBtn.TextColor3 = StudioTheme.textMuted
-closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.Font = ThemeFontBold
 closeBtn.TextSize = 12
 closeBtn.Parent = titleBar
 
@@ -378,7 +464,7 @@ filterLabel.Position = UDim2.new(0, 6, 0, 6)
 filterLabel.Text = "Place ID:"
 filterLabel.TextColor3 = StudioTheme.textMuted
 filterLabel.TextSize = 12
-filterLabel.Font = Enum.Font.SourceSansSemibold
+filterLabel.Font = ThemeFontSemibold
 filterLabel.TextXAlignment = Enum.TextXAlignment.Left
 filterLabel.Parent = ribbon
 
@@ -408,7 +494,7 @@ infoLabel.Position = UDim2.new(0, 444, 0, 6)
 infoLabel.Text = ""
 infoLabel.TextColor3 = StudioTheme.textMuted
 infoLabel.TextSize = 12
-infoLabel.Font = Enum.Font.SourceSans
+infoLabel.Font = ThemeFont
 infoLabel.TextXAlignment = Enum.TextXAlignment.Right
 infoLabel.Parent = ribbon
 
@@ -427,7 +513,7 @@ catArrow.Position = UDim2.new(0, 4, 0, 0)
 catArrow.Text = "v"
 catArrow.TextColor3 = StudioTheme.textMuted
 catArrow.TextSize = 10
-catArrow.Font = Enum.Font.SourceSansBold
+catArrow.Font = ThemeFontBold
 catArrow.Parent = categoryBar
 
 local catTitle = Instance.new("TextLabel")
@@ -437,7 +523,7 @@ catTitle.Position = UDim2.new(0, 18, 0, 0)
 catTitle.Text = "Active Waypoints Table"
 catTitle.TextColor3 = StudioTheme.text
 catTitle.TextSize = 11
-catTitle.Font = Enum.Font.SourceSansBold
+catTitle.Font = ThemeFontBold
 catTitle.TextXAlignment = Enum.TextXAlignment.Left
 catTitle.Parent = categoryBar
 
@@ -492,7 +578,7 @@ saveStatus.Position = UDim2.new(0, 8, 0, 0)
 saveStatus.Text = canFileIO() and ("Database: " .. SAVE_FILE .. " (Active)") or "File save unavailable in this executor"
 saveStatus.TextColor3 = StudioTheme.textDim
 saveStatus.TextSize = 11
-saveStatus.Font = Enum.Font.SourceSans
+saveStatus.Font = ThemeFont
 saveStatus.TextXAlignment = Enum.TextXAlignment.Left
 saveStatus.Parent = footer
 
@@ -505,7 +591,7 @@ resizeGrip.BorderSizePixel = 0
 resizeGrip.Text = "//"
 resizeGrip.TextColor3 = StudioTheme.textDim
 resizeGrip.TextSize = 11
-resizeGrip.Font = Enum.Font.SourceSansBold
+resizeGrip.Font = ThemeFontBold
 resizeGrip.Parent = panel
 
 local resizing = false
@@ -621,7 +707,7 @@ local function rebuildRows()
 		nameTag.Text = "Name:"
 		nameTag.TextColor3 = StudioTheme.textMuted
 		nameTag.TextSize = 11
-		nameTag.Font = Enum.Font.SourceSansSemibold
+		nameTag.Font = ThemeFontSemibold
 		nameTag.TextXAlignment = Enum.TextXAlignment.Left
 		nameTag.Parent = row
 
@@ -638,7 +724,7 @@ local function rebuildRows()
 		xLbl.Text = "X:"
 		xLbl.TextColor3 = StudioTheme.textDim
 		xLbl.TextSize = 11
-		xLbl.Font = Enum.Font.SourceSansBold
+		xLbl.Font = ThemeFontBold
 		xLbl.Parent = row
 
 		local xBox = makeStudioTextBox(row, tostring(entry.pos[1]), 50, 20, "0", true)
@@ -651,7 +737,7 @@ local function rebuildRows()
 		yLbl.Text = "Y:"
 		yLbl.TextColor3 = StudioTheme.textDim
 		yLbl.TextSize = 11
-		yLbl.Font = Enum.Font.SourceSansBold
+		yLbl.Font = ThemeFontBold
 		yLbl.Parent = row
 
 		local yBox = makeStudioTextBox(row, tostring(entry.pos[2]), 50, 20, "0", true)
@@ -664,7 +750,7 @@ local function rebuildRows()
 		zLbl.Text = "Z:"
 		zLbl.TextColor3 = StudioTheme.textDim
 		zLbl.TextSize = 11
-		zLbl.Font = Enum.Font.SourceSansBold
+		zLbl.Font = ThemeFontBold
 		zLbl.Parent = row
 
 		local zBox = makeStudioTextBox(row, tostring(entry.pos[3]), 50, 20, "0", true)
