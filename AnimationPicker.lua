@@ -192,12 +192,46 @@ local isLoadingMore = false
 local FetchDebounce = false
 local activeConnections = {}
 
+local function safeGetClipboard()
+	local clip = nil
+	pcall(function()
+		if getclipboard then
+			clip = getclipboard()
+		elseif get_clipboard then
+			clip = get_clipboard()
+		elseif syn and syn.get_clipboard then
+			clip = syn.get_clipboard()
+		end
+	end)
+	return (type(clip) == "string" and clip ~= "") and clip or nil
+end
+
+local function extractId(input)
+	if not input then return nil end
+	local str = tostring(input)
+	local idStr = str:match("(%d+)")
+	return tonumber(idStr)
+end
+
+local function normalizeFavPacks(rawList)
+	local normalized = {}
+	if type(rawList) ~= "table" then return normalized end
+	for _, item in ipairs(rawList) do
+		if type(item) == "number" then
+			table.insert(normalized, { id = item, name = "Saved Pack #" .. tostring(item) })
+		elseif type(item) == "table" and item.id then
+			table.insert(normalized, { id = tonumber(item.id), name = tostring(item.name or ("Pack #" .. tostring(item.id))) })
+		end
+	end
+	return normalized
+end
+
 if isfile and isfile("FavoritedAnimPacks.txt") then
 	local succ, res = pcall(function()
 		return HttpService:JSONDecode(readfile("FavoritedAnimPacks.txt"))
 	end)
 	if succ and type(res) == "table" then
-		FavoritedPacks = res
+		FavoritedPacks = normalizeFavPacks(res)
 	end
 end
 
@@ -205,6 +239,34 @@ local function SaveFavorites()
 	if writefile then
 		pcall(writefile, "FavoritedAnimPacks.txt", HttpService:JSONEncode(FavoritedPacks))
 	end
+end
+
+local function isPackFav(id)
+	id = tonumber(id)
+	if not id then return false end
+	for _, fav in ipairs(FavoritedPacks) do
+		if fav.id == id then return true end
+	end
+	return false
+end
+
+local function togglePackFav(id, name)
+	id = tonumber(id)
+	if not id then return end
+	local foundIdx = nil
+	for idx, fav in ipairs(FavoritedPacks) do
+		if fav.id == id then
+			foundIdx = idx
+			break
+		end
+	end
+	if foundIdx then
+		table.remove(FavoritedPacks, foundIdx)
+	else
+		table.insert(FavoritedPacks, { id = id, name = (name and name ~= "" and not name:find("^Saved Pack #")) and name or ("Pack #" .. tostring(id)) })
+	end
+	SaveFavorites()
+	RefreshFavorites()
 end
 
 local function httpGetSafe(url)
@@ -432,7 +494,7 @@ CatToolbar.BorderColor3 = StudioTheme.border
 CatToolbar.Parent = CatalogContainer
 
 local SearchBox = Instance.new("TextBox")
-SearchBox.Size = UDim2.new(0, 230, 0, 22)
+SearchBox.Size = UDim2.new(0, 180, 0, 22)
 SearchBox.Position = UDim2.new(0, 6, 0, 5)
 SearchBox.BackgroundColor3 = StudioTheme.insetBg
 SearchBox.TextColor3 = StudioTheme.text
@@ -446,8 +508,11 @@ SearchBox.BorderSizePixel = 1
 SearchBox.BorderColor3 = StudioTheme.border
 SearchBox.Parent = CatToolbar
 
-local RandomCatBtn = makeStudioButton(CatToolbar, "Equip Random", 100, 22, StudioTheme.btnBg, StudioTheme.text)
-RandomCatBtn.Position = UDim2.new(0, 242, 0, 5)
+local PasteCatBtn = makeStudioButton(CatToolbar, "Paste ID", 72, 22, StudioTheme.btnBg, StudioTheme.text)
+PasteCatBtn.Position = UDim2.new(0, 192, 0, 5)
+
+local RandomCatBtn = makeStudioButton(CatToolbar, "Equip Random", 98, 22, StudioTheme.btnBg, StudioTheme.text)
+RandomCatBtn.Position = UDim2.new(0, 270, 0, 5)
 
 local FavToolbar = Instance.new("Frame")
 FavToolbar.Size = UDim2.new(1, 0, 0, 32)
@@ -456,8 +521,11 @@ FavToolbar.BorderSizePixel = 1
 FavToolbar.BorderColor3 = StudioTheme.border
 FavToolbar.Parent = FavContainer
 
-local RandomFavBtn = makeStudioButton(FavToolbar, "Equip Random", 100, 22, StudioTheme.btnBg, StudioTheme.text)
+local RandomFavBtn = makeStudioButton(FavToolbar, "Equip Random", 98, 22, StudioTheme.btnBg, StudioTheme.text)
 RandomFavBtn.Position = UDim2.new(0, 6, 0, 5)
+
+local PasteFavBtn = makeStudioButton(FavToolbar, "+ Paste ID", 78, 22, StudioTheme.btnBg, StudioTheme.text)
+PasteFavBtn.Position = UDim2.new(0, 110, 0, 5)
 
 local function CreateScrollFrame(parent)
 	local Wrapper = Instance.new("Frame")
@@ -762,6 +830,7 @@ local function CreatePackCard(pack, parentScroll)
 	Card.BorderSizePixel = 1
 	Card.BorderColor3 = StudioTheme.border
 	Card.ClipsDescendants = true
+	Card:SetAttribute("PackId", tonumber(pack.id))
 
 	local IconContainer = Instance.new("Frame")
 	IconContainer.Size = UDim2.new(1, -6, 0, 80)
@@ -780,6 +849,7 @@ local function CreatePackCard(pack, parentScroll)
 	local cleanName = (pack.name or ("Pack #" .. tostring(pack.id))):gsub(" Animation Package", ""):gsub(" Animations", ""):gsub(" Package", "")
 
 	local NameLabel = Instance.new("TextLabel")
+	NameLabel.Name = "NameLabel"
 	NameLabel.Size = UDim2.new(1, -6, 0, 26)
 	NameLabel.Position = UDim2.new(0, 3, 0, 86)
 	NameLabel.BackgroundTransparency = 1
@@ -793,6 +863,7 @@ local function CreatePackCard(pack, parentScroll)
 	NameLabel.Parent = Card
 
 	local FavToggle = Instance.new("TextButton")
+	FavToggle.Name = "FavToggle"
 	FavToggle.Size = UDim2.new(0, 20, 0, 20)
 	FavToggle.Position = UDim2.new(1, -22, 0, 2)
 	FavToggle.BackgroundTransparency = 1
@@ -800,7 +871,7 @@ local function CreatePackCard(pack, parentScroll)
 	FavToggle.Font = ThemeFontBold
 	FavToggle.Parent = Card
 
-	local isFav = table.find(FavoritedPacks, pack.id)
+	local isFav = isPackFav(pack.id)
 	FavToggle.Text = isFav and "[X]" or "[+]"
 	FavToggle.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
 
@@ -818,43 +889,46 @@ local function CreatePackCard(pack, parentScroll)
 	end)
 
 	FavToggle.MouseButton1Click:Connect(function()
-		local idx = table.find(FavoritedPacks, pack.id)
-		if idx then
-			table.remove(FavoritedPacks, idx)
-			FavToggle.Text = "[+]"
-			FavToggle.TextColor3 = StudioTheme.textDim
-		else
-			table.insert(FavoritedPacks, pack.id)
-			FavToggle.Text = "[X]"
-			FavToggle.TextColor3 = StudioTheme.yellow
-		end
-		SaveFavorites()
-		RefreshFavorites()
+		togglePackFav(pack.id, pack.name)
 	end)
 
 	Card.Parent = parentScroll
+	return Card
 end
 
 local function FetchBundleMeta(bundleId)
-	local name = nil
+	bundleId = tonumber(bundleId)
+	if not bundleId then return { id = 0, name = "Unknown Pack" } end
+
 	local succ, details = pcall(function()
 		return AssetService:GetBundleDetailsAsync(bundleId)
 	end)
-	if succ and details and details.Name then
+	if succ and details and details.Name and details.Name ~= "" then
 		return { id = bundleId, name = details.Name }
 	end
 
 	local webJson = httpGetSafe("https://catalog.roproxy.com/v1/bundles/" .. tostring(bundleId) .. "/details")
+	if not webJson then
+		webJson = httpGetSafe("https://catalog.roblox.com/v1/bundles/" .. tostring(bundleId) .. "/details")
+	end
 	if webJson then
 		pcall(function()
 			local decoded = HttpService:JSONDecode(webJson)
-			if decoded and decoded.name then
-				name = decoded.name
+			if decoded and decoded.name and decoded.name ~= "" then
+				details = { id = bundleId, name = decoded.name }
 			end
 		end)
+		if details and details.name then return details end
 	end
 
-	return { id = bundleId, name = name or ("Bundle #" .. tostring(bundleId)) }
+	local mSucc, mInfo = pcall(function()
+		return MarketplaceService:GetProductInfo(bundleId, Enum.InfoType.Asset)
+	end)
+	if mSucc and mInfo and mInfo.Name and mInfo.Name ~= "" then
+		return { id = bundleId, name = mInfo.Name }
+	end
+
+	return { id = bundleId, name = "Bundle #" .. tostring(bundleId) }
 end
 
 function RefreshFavorites()
@@ -862,16 +936,68 @@ function RefreshFavorites()
 		if child:IsA("Frame") then child:Destroy() end
 	end
 	FavTabBtn.Text = string.format("Favorites (%d)", #FavoritedPacks)
-	for _, id in ipairs(FavoritedPacks) do
-		local packData = { id = id, name = "Saved Pack #" .. tostring(id) }
-		for _, p in ipairs(AnimationPacks) do
-			if p.id == id then
-				packData.name = p.name
-				break
+	for _, fav in ipairs(FavoritedPacks) do
+		local packData = { id = fav.id, name = fav.name or ("Saved Pack #" .. tostring(fav.id)) }
+		if packData.name:find("^Saved Pack #") or packData.name:find("^Pack #") or packData.name:find("^Bundle #") then
+			for _, p in ipairs(AnimationPacks) do
+				if p.id == fav.id and p.name and not p.name:find("^Pack #") and not p.name:find("^Bundle #") then
+					packData.name = p.name
+					fav.name = p.name
+					SaveFavorites()
+					break
+				end
 			end
 		end
-		CreatePackCard(packData, FavScroll)
+
+		local card = CreatePackCard(packData, FavScroll)
+
+		if packData.name:find("^Saved Pack #") or packData.name:find("^Pack #") or packData.name:find("^Bundle #") then
+			task.spawn(function()
+				local meta = FetchBundleMeta(fav.id)
+				if meta and meta.name and not meta.name:find("^Bundle #") and not meta.name:find("^Pack #") then
+					fav.name = meta.name
+					SaveFavorites()
+					if card and card.Parent then
+						local nameLbl = card:FindFirstChild("NameLabel")
+						if nameLbl then
+							local clean = meta.name:gsub(" Animation Package", ""):gsub(" Animations", ""):gsub(" Package", "")
+							nameLbl.Text = clean
+						end
+					end
+				end
+			end)
+		end
 	end
+end
+
+local function LoadAndEquipCustomPack(rawInput, autoFav)
+	local numId = extractId(rawInput)
+	if not numId then
+		StatusLabel.Text = "Status: Invalid bundle or animation ID."
+		return
+	end
+
+	StatusLabel.Text = "Resolving animation pack #" .. tostring(numId) .. " from Roblox..."
+
+	task.spawn(function()
+		local meta = FetchBundleMeta(numId)
+		local exists = false
+		for _, p in ipairs(AnimationPacks) do
+			if p.id == numId then exists = true; break end
+		end
+		if not exists then
+			table.insert(AnimationPacks, 1, meta)
+			CreatePackCard(meta, CatScroll)
+		end
+
+		if autoFav and not isPackFav(numId) then
+			table.insert(FavoritedPacks, { id = numId, name = meta.name })
+			SaveFavorites()
+			RefreshFavorites()
+		end
+
+		EquipAnimationPack(meta)
+	end)
 end
 
 local function ProcessCatalogPage(pageData)
@@ -981,9 +1107,40 @@ local canvasConn = CatScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(
 end)
 table.insert(activeConnections, canvasConn)
 
+PasteCatBtn.MouseButton1Click:Connect(function()
+	local clip = safeGetClipboard()
+	if clip and extractId(clip) then
+		LoadAndEquipCustomPack(clip, false)
+	else
+		SearchBox.Text = ""
+		SearchBox.PlaceholderText = "Paste Bundle or Asset ID..."
+		SearchBox:CaptureFocus()
+		StatusLabel.Text = "Paste ID into search box and press Enter."
+	end
+end)
+
+PasteFavBtn.MouseButton1Click:Connect(function()
+	local clip = safeGetClipboard()
+	if clip and extractId(clip) then
+		LoadAndEquipCustomPack(clip, true)
+	else
+		selectTab(true)
+		SearchBox.Text = ""
+		SearchBox.PlaceholderText = "Paste ID to favorite..."
+		SearchBox:CaptureFocus()
+		StatusLabel.Text = "Paste ID into search box and press Enter (will be favorited)."
+	end
+end)
+
 SearchBox.FocusLost:Connect(function(enterPressed)
 	if enterPressed then
-		FetchCatalog(SearchBox.Text)
+		local text = SearchBox.Text
+		local numId = extractId(text)
+		if numId and (text:match("^%s*%d+%s*$") or text:match("roblox%.com") or text:match("rbxassetid://")) then
+			LoadAndEquipCustomPack(text, false)
+		else
+			FetchCatalog(text)
+		end
 	end
 end)
 
@@ -1003,10 +1160,12 @@ end)
 
 RandomFavBtn.MouseButton1Click:Connect(function()
 	if #FavoritedPacks > 0 then
-		local randId = FavoritedPacks[math.random(1, #FavoritedPacks)]
-		local packData = { id = randId, name = "Saved Pack" }
+		local rand = FavoritedPacks[math.random(1, #FavoritedPacks)]
+		local id = type(rand) == "table" and rand.id or rand
+		local name = type(rand) == "table" and rand.name or ("Pack #" .. tostring(id))
+		local packData = { id = id, name = name }
 		for _, p in ipairs(AnimationPacks) do
-			if p.id == randId then packData = p; break end
+			if p.id == id then packData = p; break end
 		end
 		EquipAnimationPack(packData)
 	end
