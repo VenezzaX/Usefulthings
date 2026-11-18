@@ -193,6 +193,8 @@ local FetchDebounce = false
 local activeConnections = {}
 local RefreshFavorites
 local updateAllCardsFavVisuals
+local updateAllSelectionVisuals
+local currentEquippedPackId = nil
 
 local function safeGetClipboard()
 	local clip = nil
@@ -791,6 +793,8 @@ local function EquipAnimationPack(packData)
 		end
 
 		currentAppliedPackData = packData
+		currentEquippedPackId = tonumber(packData.id)
+		if updateAllSelectionVisuals then updateAllSelectionVisuals() end
 
 		-- 1. Disable Animate script to unload active internal listeners
 		animate.Disabled = true
@@ -837,11 +841,39 @@ end
 
 local function CreatePackCard(pack, parentScroll)
 	local Card = Instance.new("Frame")
-	Card.BackgroundColor3 = StudioTheme.cardBg
-	Card.BorderSizePixel = 1
-	Card.BorderColor3 = StudioTheme.border
+	local numPackId = tonumber(pack.id)
+	local isSelected = (currentEquippedPackId and numPackId and numPackId == currentEquippedPackId)
+	Card.BackgroundColor3 = isSelected and Color3.fromRGB(32, 42, 58) or StudioTheme.cardBg
+	Card.BorderSizePixel = isSelected and 2 or 1
+	Card.BorderColor3 = isSelected and StudioTheme.blue or StudioTheme.border
 	Card.ClipsDescendants = true
-	Card:SetAttribute("PackId", tonumber(pack.id))
+	Card:SetAttribute("PackId", numPackId)
+	Card:SetAttribute("IsSelected", isSelected and true or false)
+
+	local ActiveBadge = Instance.new("Frame")
+	ActiveBadge.Name = "ActiveBadge"
+	ActiveBadge.Size = UDim2.new(0, 60, 0, 16)
+	ActiveBadge.Position = UDim2.new(0, 3, 0, 3)
+	ActiveBadge.BackgroundColor3 = StudioTheme.blue
+	ActiveBadge.BorderSizePixel = 0
+	ActiveBadge.ZIndex = 20
+	ActiveBadge.Visible = isSelected and true or false
+	ActiveBadge.Parent = Card
+
+	local badgeCorner = Instance.new("UICorner")
+	badgeCorner.CornerRadius = UDim.new(0, 3)
+	badgeCorner.Parent = ActiveBadge
+
+	local badgeText = Instance.new("TextLabel")
+	badgeText.Name = "BadgeText"
+	badgeText.Size = UDim2.new(1, 0, 1, 0)
+	badgeText.BackgroundTransparency = 1
+	badgeText.Text = "EQUIPPED"
+	badgeText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	badgeText.Font = ThemeFontBold
+	badgeText.TextSize = 9
+	badgeText.ZIndex = 21
+	badgeText.Parent = ActiveBadge
 
 	local IconContainer = Instance.new("Frame")
 	IconContainer.Size = UDim2.new(1, -6, 0, 80)
@@ -906,16 +938,34 @@ local function CreatePackCard(pack, parentScroll)
 	end)
 
 	Card.MouseEnter:Connect(function()
-		Card.BackgroundColor3 = StudioTheme.cardHover
-		Card.BorderColor3 = StudioTheme.blue
+		local sel = (currentEquippedPackId and numPackId and numPackId == currentEquippedPackId)
+		if not sel then
+			Card.BackgroundColor3 = StudioTheme.cardHover
+			Card.BorderColor3 = StudioTheme.blue
+		end
 	end)
 	Card.MouseLeave:Connect(function()
-		Card.BackgroundColor3 = StudioTheme.cardBg
-		Card.BorderColor3 = StudioTheme.border
+		local sel = (currentEquippedPackId and numPackId and numPackId == currentEquippedPackId)
+		if sel then
+			Card.BackgroundColor3 = Color3.fromRGB(32, 42, 58)
+			Card.BorderSizePixel = 2
+			Card.BorderColor3 = StudioTheme.blue
+		else
+			Card.BackgroundColor3 = StudioTheme.cardBg
+			Card.BorderSizePixel = 1
+			Card.BorderColor3 = StudioTheme.border
+		end
 	end)
 
-	Icon.MouseButton1Click:Connect(function()
+	local function onSelectPack()
 		EquipAnimationPack(pack)
+	end
+
+	Icon.MouseButton1Click:Connect(onSelectPack)
+	Card.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			onSelectPack()
+		end
 	end)
 
 	FavToggle.MouseButton1Click:Connect(function()
@@ -937,6 +987,34 @@ function updateAllCardsFavVisuals()
 					local isFav = isPackFav(pId)
 					fBtn.Text = isFav and "[X]" or "[+]"
 					fBtn.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
+				end
+			end
+		end
+	end
+	updateScroll(CatScroll)
+	updateScroll(FavScroll)
+end
+
+function updateAllSelectionVisuals()
+	local function updateScroll(scrollFrame)
+		if not scrollFrame then return end
+		for _, card in ipairs(scrollFrame:GetChildren()) do
+			if card:IsA("GuiObject") and card:GetAttribute("PackId") then
+				local pId = tonumber(card:GetAttribute("PackId"))
+				local isSel = (currentEquippedPackId and pId and pId == currentEquippedPackId)
+				card:SetAttribute("IsSelected", isSel and true or false)
+				local badge = card:FindFirstChild("ActiveBadge")
+				if badge then
+					badge.Visible = isSel and true or false
+				end
+				if isSel then
+					card.BackgroundColor3 = Color3.fromRGB(32, 42, 58)
+					card.BorderSizePixel = 2
+					card.BorderColor3 = StudioTheme.blue
+				else
+					card.BackgroundColor3 = StudioTheme.cardBg
+					card.BorderSizePixel = 1
+					card.BorderColor3 = StudioTheme.border
 				end
 			end
 		end
