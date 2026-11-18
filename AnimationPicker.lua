@@ -191,6 +191,8 @@ local catalogPages = nil
 local isLoadingMore = false
 local FetchDebounce = false
 local activeConnections = {}
+local RefreshFavorites
+local updateAllCardsFavVisuals
 
 local function safeGetClipboard()
 	local clip = nil
@@ -245,7 +247,8 @@ local function isPackFav(id)
 	id = tonumber(id)
 	if not id then return false end
 	for _, fav in ipairs(FavoritedPacks) do
-		if fav.id == id then return true end
+		local favId = type(fav) == "table" and tonumber(fav.id) or tonumber(fav)
+		if favId == id then return true end
 	end
 	return false
 end
@@ -255,7 +258,8 @@ local function togglePackFav(id, name)
 	if not id then return end
 	local foundIdx = nil
 	for idx, fav in ipairs(FavoritedPacks) do
-		if fav.id == id then
+		local favId = type(fav) == "table" and tonumber(fav.id) or tonumber(fav)
+		if favId == id then
 			foundIdx = idx
 			break
 		end
@@ -266,7 +270,8 @@ local function togglePackFav(id, name)
 		table.insert(FavoritedPacks, { id = id, name = (name and name ~= "" and not name:find("^Saved Pack #")) and name or ("Pack #" .. tostring(id)) })
 	end
 	SaveFavorites()
-	RefreshFavorites()
+	if RefreshFavorites then RefreshFavorites() end
+	if updateAllCardsFavVisuals then updateAllCardsFavVisuals() end
 end
 
 local function httpGetSafe(url)
@@ -481,6 +486,12 @@ local function selectTab(isCatalog)
 	FavTabBtn.BackgroundColor3 = (not isCatalog) and StudioTheme.tabActive or StudioTheme.tabInactive
 	FavTabBtn.TextColor3 = (not isCatalog) and StudioTheme.text or StudioTheme.textMuted
 	FavTabAccent.Visible = not isCatalog
+
+	if not isCatalog then
+		if RefreshFavorites then RefreshFavorites() end
+	else
+		if updateAllCardsFavVisuals then updateAllCardsFavVisuals() end
+	end
 end
 
 CatalogTabBtn.MouseButton1Click:Connect(function() selectTab(true) end)
@@ -864,16 +875,35 @@ local function CreatePackCard(pack, parentScroll)
 
 	local FavToggle = Instance.new("TextButton")
 	FavToggle.Name = "FavToggle"
-	FavToggle.Size = UDim2.new(0, 20, 0, 20)
-	FavToggle.Position = UDim2.new(1, -22, 0, 2)
-	FavToggle.BackgroundTransparency = 1
+	FavToggle.Size = UDim2.new(0, 24, 0, 20)
+	FavToggle.Position = UDim2.new(1, -26, 0, 3)
+	FavToggle.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+	FavToggle.BackgroundTransparency = 0.25
+	FavToggle.BorderSizePixel = 1
+	FavToggle.BorderColor3 = StudioTheme.border
 	FavToggle.TextSize = 11
 	FavToggle.Font = ThemeFontBold
+	FavToggle.Active = true
+	FavToggle.AutoButtonColor = true
+	FavToggle.ZIndex = 25
 	FavToggle.Parent = Card
+
+	local favCorner = Instance.new("UICorner")
+	favCorner.CornerRadius = UDim.new(0, 4)
+	favCorner.Parent = FavToggle
 
 	local isFav = isPackFav(pack.id)
 	FavToggle.Text = isFav and "[X]" or "[+]"
 	FavToggle.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
+
+	FavToggle.MouseEnter:Connect(function()
+		FavToggle.BackgroundTransparency = 0
+		FavToggle.BorderColor3 = StudioTheme.blue
+	end)
+	FavToggle.MouseLeave:Connect(function()
+		FavToggle.BackgroundTransparency = 0.25
+		FavToggle.BorderColor3 = StudioTheme.border
+	end)
 
 	Card.MouseEnter:Connect(function()
 		Card.BackgroundColor3 = StudioTheme.cardHover
@@ -896,39 +926,23 @@ local function CreatePackCard(pack, parentScroll)
 	return Card
 end
 
-local function FetchBundleMeta(bundleId)
-	bundleId = tonumber(bundleId)
-	if not bundleId then return { id = 0, name = "Unknown Pack" } end
-
-	local succ, details = pcall(function()
-		return AssetService:GetBundleDetailsAsync(bundleId)
-	end)
-	if succ and details and details.Name and details.Name ~= "" then
-		return { id = bundleId, name = details.Name }
-	end
-
-	local webJson = httpGetSafe("https://catalog.roproxy.com/v1/bundles/" .. tostring(bundleId) .. "/details")
-	if not webJson then
-		webJson = httpGetSafe("https://catalog.roblox.com/v1/bundles/" .. tostring(bundleId) .. "/details")
-	end
-	if webJson then
-		pcall(function()
-			local decoded = HttpService:JSONDecode(webJson)
-			if decoded and decoded.name and decoded.name ~= "" then
-				details = { id = bundleId, name = decoded.name }
+function updateAllCardsFavVisuals()
+	local function updateScroll(scrollFrame)
+		if not scrollFrame then return end
+		for _, card in ipairs(scrollFrame:GetChildren()) do
+			if card:IsA("Frame") then
+				local pId = card:GetAttribute("PackId")
+				local fBtn = card:FindFirstChild("FavToggle")
+				if pId and fBtn then
+					local isFav = isPackFav(pId)
+					fBtn.Text = isFav and "[X]" or "[+]"
+					fBtn.TextColor3 = isFav and StudioTheme.yellow or StudioTheme.textDim
+				end
 			end
-		end)
-		if details and details.name then return details end
+		end
 	end
-
-	local mSucc, mInfo = pcall(function()
-		return MarketplaceService:GetProductInfo(bundleId, Enum.InfoType.Asset)
-	end)
-	if mSucc and mInfo and mInfo.Name and mInfo.Name ~= "" then
-		return { id = bundleId, name = mInfo.Name }
-	end
-
-	return { id = bundleId, name = "Bundle #" .. tostring(bundleId) }
+	updateScroll(CatScroll)
+	updateScroll(FavScroll)
 end
 
 function RefreshFavorites()
@@ -1119,11 +1133,14 @@ PasteCatBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
+local pendingFavFromSearch = false
+
 PasteFavBtn.MouseButton1Click:Connect(function()
 	local clip = safeGetClipboard()
 	if clip and extractId(clip) then
 		LoadAndEquipCustomPack(clip, true)
 	else
+		pendingFavFromSearch = true
 		selectTab(true)
 		SearchBox.Text = ""
 		SearchBox.PlaceholderText = "Paste ID to favorite..."
@@ -1137,8 +1154,11 @@ SearchBox.FocusLost:Connect(function(enterPressed)
 		local text = SearchBox.Text
 		local numId = extractId(text)
 		if numId and (text:match("^%s*%d+%s*$") or text:match("roblox%.com") or text:match("rbxassetid://")) then
-			LoadAndEquipCustomPack(text, false)
+			local autoFav = pendingFavFromSearch
+			pendingFavFromSearch = false
+			LoadAndEquipCustomPack(text, autoFav)
 		else
+			pendingFavFromSearch = false
 			FetchCatalog(text)
 		end
 	end
